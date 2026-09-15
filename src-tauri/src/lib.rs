@@ -5,6 +5,7 @@ mod task_sync;
 mod task_lifecycle;
 mod sheet_layout;
 mod sheet_guard;
+mod updates;
 #[cfg(test)]
 mod live_checks;
 use tauri::{
@@ -108,8 +109,12 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(google::GoogleState::default())
+        .manage(updates::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             open_local_path,
+            updates::check_app_update,
+            updates::download_app_update,
+            updates::install_app_update,
             google::google_status,
             google::google_configure,
             google::google_connect,

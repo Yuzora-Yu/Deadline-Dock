@@ -1,4 +1,5 @@
 import { GoogleSyncSettings } from './GoogleSyncSettings';
+import { UpdateSettings } from './UpdateSettings';
 import { useState } from 'react';
 import type { Category, CategoryColor } from '../types';
 import type { Repository } from '../lib/repository';
@@ -119,5 +120,6 @@ export function CategorySettings({ repo, categories, onChanged }: { repo: Reposi
       </div>
     </section>
     <GoogleSyncSettings />
+    <UpdateSettings />
   </div>;
 }

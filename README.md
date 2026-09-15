@@ -2,7 +2,9 @@
 
 締切を中心に仕事を管理する、ローカル完結型のWindowsデスクトップタスク管理アプリです。
 
-Current development snapshot: **v0.1.10-dev**
+Current release: **v0.1.13**
+
+スマホ向けの[ブラウザ版](https://yu-zora.com/tools/deadline-dock/)も利用できます。開発・配信手順は [WEB_APP.md](docs/WEB_APP.md)、Windowsの更新は [APP_UPDATES.md](docs/APP_UPDATES.md) を参照してください。
 
 ## 引き継ぎ・現在の状態
 
@@ -20,7 +22,7 @@ Current development snapshot: **v0.1.10-dev**
 - 過去タスクを登録フォームへ複写し、内容を編集してから新規登録
 - ミニウィンドウ、Always on Top、システムトレイ、グローバルショートカット
 - JSONバックアップ / 復元
-- ローカル機能はアカウント不要。Google Sheets連携は任意（タスク双方向同期・競合対応、実Google接続は確認待ち）
+- ローカル機能はアカウント不要。Google Sheets連携は任意（タスク双方向同期・競合対応、実Google接続確認済み）
 
 ## 技術構成
 
@@ -30,7 +32,7 @@ Current development snapshot: **v0.1.10-dev**
 - Tauri公式 Dialog / Opener / FS / Global Shortcut / Window State
 
 製品版ではデータをPC内のSQLite DB (`deadline-dock.db`) に保存します。
-ブラウザでUIだけ確認する場合は、開発用フォールバックとして `localStorage` を利用します。
+スマホ向けブラウザ版は `web/` に分離し、IndexedDBに保存します。デスクトップUIの開発用フォールバックとは別の実装です。
 
 ## 現在の実装
 

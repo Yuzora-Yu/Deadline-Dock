@@ -181,3 +181,39 @@ fn live_google_maintenance() {
         result.unwrap().unwrap();
     });
 }
+
+#[test]
+#[ignore = "Opt-in bridge to a named synthetic file created by the browser UI"]
+fn live_browser_bridge() {
+    let path=std::env::var("DEADLINE_DOCK_LIVE_AUTH_DB").expect("Select auth DB");
+    let id=std::env::var("DEADLINE_DOCK_BROWSER_TEST_SHEET").expect("Select synthetic sheet");
+    let action=std::env::var("DEADLINE_DOCK_BROWSER_TEST_ACTION").expect("Select edit or cleanup");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let auth=SqlitePool::connect_with(sqlx::sqlite::SqliteConnectOptions::new().filename(path).read_only(true)).await.unwrap();
+        let token=google::access_token(&auth).await.unwrap();let http=google::client().unwrap();
+        let file=request_json(http.get(format!("https://www.googleapis.com/drive/v3/files/{id}?fields=id,name,appProperties")).bearer_auth(&token),true).await.unwrap();
+        assert_eq!(file["name"],"Deadline Dock ブラウザ版 動作検証（削除予定）","Refuse non-synthetic file");
+        assert_eq!(file["appProperties"]["deadlineDock"],"true");
+        let endpoint=format!("https://sheets.googleapis.com/v4/spreadsheets/{id}");
+        let ticket=crate::sheet_guard::observe(&id,&token).await.unwrap();
+        let rows=values(&http,&token,&endpoint).await.unwrap();
+        if action=="edit" {
+            assert_eq!(rows["valueRanges"][0]["values"][0][1],"ブラウザ版の動作確認");
+            assert_eq!(rows["valueRanges"][1]["values"][0][4],"チェックリストの保存確認");
+            crate::sheet_guard::commit(&id,&token,&ticket,vec![json!({"updateCells":{"start":{"sheetId":100,"rowIndex":1,"columnIndex":5},"rows":[{"values":[{"userEnteredValue":{"stringValue":"スプレッドシートから更新を確認"}}]}],"fields":"userEnteredValue"}})]).await.unwrap();
+            println!("LIVE PASS: native OAuth reads browser-created file; task/checklist present; guarded note update applied");
+        } else if action=="cleanup" {
+            let meta=request_json(http.get(&endpoint).bearer_auth(&token).query(&[("fields","sheets(properties),namedRanges")]),true).await.unwrap();
+            assert_eq!(meta["namedRanges"].as_array().unwrap().len(),2);
+            for sid in [105,106]{assert!(meta["sheets"].as_array().unwrap().iter().any(|s|s["properties"]["sheetId"]==sid&&s["properties"]["hidden"]==true));}
+            for (index,range) in rows["valueRanges"].as_array().unwrap().iter().enumerate(){
+                // Sheets materializes unchecked validation cells as false, even in empty rows.
+                for row in range["values"].as_array().into_iter().flatten(){
+                    assert!(row.as_array().unwrap().iter().enumerate().all(|(column,value)|value.is_null()||value.as_str()==Some("")||(index==1&&column==3&&value==false)),"Task or child content remains: {range}");
+                }
+            }
+            request_json(http.patch(format!("https://www.googleapis.com/drive/v3/files/{id}")).bearer_auth(&token).json(&json!({"trashed":true})),false).await.unwrap();
+            println!("LIVE PASS: browser deletion removed task/children; synthetic file trashed");
+        } else {panic!("Select edit or cleanup");}
+    });
+}
