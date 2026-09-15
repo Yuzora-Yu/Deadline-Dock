@@ -28,6 +28,7 @@ async fn exercise(token: &str, id: &str) -> Result<(), String> {
             .await
             .map_err(|e| e.to_string())?;
     }
+    let bootstrap_ticket = crate::sheet_guard::observe(id, token).await?;
     sheet_layout::ensure(&db, token, id, false).await?;
     let endpoint = format!("https://sheets.googleapis.com/v4/spreadsheets/{id}");
     let http = google::client()?;
@@ -53,6 +54,24 @@ async fn exercise(token: &str, id: &str) -> Result<(), String> {
         false,
     )
     .await?;
+    let stale_write = vec![
+        json!({"updateCells":{"start":{"sheetId":100,"rowIndex":1,"columnIndex":5},"rows":[{"values":[{"userEnteredValue":{"stringValue":"stale writer must not commit"}}]}],"fields":"userEnteredValue"}}),
+    ];
+    assert!(
+        crate::sheet_guard::commit(id, token, &bootstrap_ticket, stale_write.clone())
+            .await
+            .is_err()
+    );
+    let first = crate::sheet_guard::observe(id, token).await?;
+    let second = crate::sheet_guard::observe(id, token).await?;
+    crate::sheet_guard::commit(id,token,&first,vec![json!({"updateCells":{"start":{"sheetId":100,"rowIndex":1,"columnIndex":5},"rows":[{"values":[{"userEnteredValue":{"stringValue":"first writer"}}]}],"fields":"userEnteredValue"}})]).await?;
+    assert!(crate::sheet_guard::commit(id, token, &second, stale_write)
+        .await
+        .is_err());
+    assert!(!values(&http, token, &endpoint)
+        .await?
+        .to_string()
+        .contains("stale writer"));
     let before = values(&http, token, &endpoint).await?;
     sheet_layout::ensure(&db, token, id, true).await?;
     assert_eq!(
@@ -111,6 +130,18 @@ async fn exercise(token: &str, id: &str) -> Result<(), String> {
             .sum::<usize>(),
         7,
         "metadata duplicated"
+    );
+    let guards = request_json(
+        http.get(&endpoint)
+            .bearer_auth(token)
+            .query(&[("fields", "namedRanges")]),
+        true,
+    )
+    .await?;
+    assert_eq!(
+        guards["namedRanges"].as_array().unwrap().len(),
+        2,
+        "write guard must not accumulate records"
     );
     println!("LIVE PASS: initial setup, value-preserving repair twice, task/three-child row deletion, repeat sync, missing-tab recreation, metadata idempotency");
     Ok(())

@@ -376,21 +376,13 @@ pub(crate) async fn synchronize(db: &SqlitePool, id: &str, token: &str) -> Resul
         return Err("削除対象が多すぎます。同期を中止しました。".into());
     }
     if !requests.is_empty() {
+        let ticket = crate::sheet_guard::observe(id, token).await?;
         if read(&id, &token).await? != snapshot {
             return Err("RETRY|同期中にシートが変更されました。再同期します。".into());
         }
         // One atomic Sheets batch: persist deletion identities AND remove rows.
         // Never retry a positional delete blindly after an uncertain response.
-        request_json(
-            google::client()?
-                .post(format!(
-                    "https://sheets.googleapis.com/v4/spreadsheets/{id}:batchUpdate"
-                ))
-                .bearer_auth(&token)
-                .json(&json!({"requests":requests})),
-            false,
-        )
-        .await?;
+        crate::sheet_guard::commit(id, token, &ticket, requests.clone()).await?;
         let after = read(&id, &token).await?;
         let recorded = ledger(&after)?;
         if chosen

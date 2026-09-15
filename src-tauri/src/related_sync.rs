@@ -275,22 +275,14 @@ async fn write(
     if patches.is_empty() {
         return Ok(());
     }
+    let ticket = crate::sheet_guard::observe(id, token).await?;
     if read(id, token, kind).await?.rows != before.rows {
         return Err("REMOTE_CHANGED|同期中にシートが編集されました。再同期します。".into());
     }
     let journal = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO sync_write_journal(id,spreadsheet_id,before_json,patches_json) VALUES(?,?,?,?)").bind(&journal).bind(id)
         .bind(json!({"sheetId":kind.sid(),"rows":before.rows}).to_string()).bind(json!(patches).to_string()).execute(db).await.map_err(|_|DB_ERROR)?;
-    request_json(
-        google::client()?
-            .post(format!(
-                "https://sheets.googleapis.com/v4/spreadsheets/{id}:batchUpdate"
-            ))
-            .bearer_auth(token)
-            .json(&json!({"requests":requests(kind,before,patches)})),
-        false,
-    )
-    .await?;
+    crate::sheet_guard::commit(id, token, &ticket, requests(kind,before,patches)).await?;
     let verified = read(id, token, kind).await?;
     if patches.iter().any(|(i, v)| {
         if empty_row(kind, v) {

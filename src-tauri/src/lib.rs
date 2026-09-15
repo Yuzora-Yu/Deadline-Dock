@@ -4,6 +4,7 @@ mod sync_onboarding;
 mod task_sync;
 mod task_lifecycle;
 mod sheet_layout;
+mod sheet_guard;
 #[cfg(test)]
 mod live_checks;
 use tauri::{

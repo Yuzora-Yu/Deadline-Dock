@@ -244,6 +244,7 @@ pub(crate) async fn ensure(
     id: &str,
     repair: bool,
 ) -> Result<(), String> {
+    let ticket = crate::sheet_guard::observe(id, token).await?;
     let http = google::client()?;
     let endpoint = format!("https://sheets.googleapis.com/v4/spreadsheets/{id}");
     let metadata = request_json(
@@ -359,15 +360,7 @@ pub(crate) async fn ensure(
             requests.push(json!({"deleteSheet":{"sheetId":0}}));
         }
     }
-    if !requests.is_empty() {
-        request_json(
-            http.post(format!("{endpoint}:batchUpdate"))
-                .bearer_auth(token)
-                .json(&json!({"requests":requests})),
-            false,
-        )
-        .await?;
-    }
+    crate::sheet_guard::commit(id, token, &ticket, requests).await?;
     remember(db, id, &generations).await?;
     Ok(())
 }

@@ -261,6 +261,7 @@ pub async fn google_write_tasks(
         return Err("同期先が変更されました。再試行してください。".into());
     }
     let token = google::access_token(&db).await?;
+    let ticket = crate::sheet_guard::observe(&id, &token).await?;
     let current = read_sheet(&id, &token).await?;
     if current.version != expected_version {
         return Err("REMOTE_CHANGED|シートが同期中に編集されました。再読込して同期します。".into());
@@ -277,16 +278,7 @@ pub async fn google_write_tasks(
     sqlx::query("INSERT INTO sync_write_journal(id,spreadsheet_id,before_json,patches_json) VALUES(?,?,?,?)")
         .bind(&journal).bind(&id).bind(json!(before).to_string()).bind(json!(patches).to_string()).execute(&db).await.map_err(|_| DB_ERROR)?;
     // Writes are not blindly retried: an HTTP timeout may follow a successful commit.
-    request_json(
-        google::client()?
-            .post(format!(
-                "https://sheets.googleapis.com/v4/spreadsheets/{id}:batchUpdate"
-            ))
-            .bearer_auth(&token)
-            .json(&json!({"requests":requests})),
-        false,
-    )
-    .await?;
+    crate::sheet_guard::commit(&id, &token, &ticket, requests).await?;
     let verified = read_sheet(&id, &token).await?;
     if patches.iter().any(|p| {
         verified
