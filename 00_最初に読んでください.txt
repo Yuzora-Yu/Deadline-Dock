@@ -1,0 +1,37 @@
+Deadline Dock Windows 起動手順
+================================
+
+想定フォルダ:
+C:\Users\ship2\Documents\06-Yu-zora\deadline-dock
+
+【最初の1回だけ】
+1. 01_初回セットアップ.cmd をダブルクリック
+2. Windowsの確認画面(UAC)が出たら「はい」
+3. 「セットアップ完了です」と表示されたら閉じる
+
+【アプリを試す】
+4. 02_DeadlineDockを起動.cmd をダブルクリック
+5. Deadline Dock のウィンドウが開けばOK
+
+※ 開発モードで動かしている間、黒いPowerShell画面は閉じないでください。
+※ Deadline Dock の × ボタンは「終了」ではなく非表示です。
+   完全終了はタスクトレイの Deadline Dock →「終了」です。
+
+【普通のWindowsアプリとして使う】
+6. 動作確認後、03_Windows版をビルド.cmd をダブルクリック
+7. windows-build フォルダが自動で開きます
+   - Deadline-Dock.exe : 直接起動用
+   - *_x64-setup.exe 等 : インストーラー
+
+【うまくいかない場合】
+05_診断情報を作成.cmd をダブルクリックしてください。
+deadline-dock-diagnostics.txt が開くので、その内容をChatGPTに貼ってください。
+
+PowerShellから実行する場合:
+cd C:\Users\ship2\Documents\06-Yu-zora\deadline-dock
+.\01_初回セットアップ.cmd
+.\02_DeadlineDockを起動.cmd
+
+【Windowsの警告が出る場合】
+この開発版はコード署名していないため、Windowsが発行元の警告を出す場合があります。
+ZIP内のcmdがブロックされる場合は、ZIPを右クリック → プロパティ →「ブロック解除 / 許可する」があれば有効にして再展開してください。

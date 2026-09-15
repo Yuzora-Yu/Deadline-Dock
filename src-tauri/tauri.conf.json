@@ -1,0 +1,73 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Deadline Dock",
+  "version": "0.1.9",
+  "identifier": "local.deadlinedock.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Deadline Dock",
+        "url": "index.html",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 880,
+        "minHeight": 580,
+        "center": true,
+        "visible": true
+      },
+      {
+        "label": "mini",
+        "title": "Deadline Dock Mini",
+        "url": "index.html?mode=mini",
+        "width": 360,
+        "height": 470,
+        "minWidth": 300,
+        "minHeight": 250,
+        "alwaysOnTop": true,
+        "visible": false
+      },
+      {
+        "label": "quick",
+        "title": "タスクを追加",
+        "url": "index.html?mode=quick",
+        "width": 620,
+        "height": 470,
+        "minWidth": 520,
+        "minHeight": 400,
+        "alwaysOnTop": true,
+        "center": true,
+        "resizable": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "sql": {
+      "preload": [
+        "sqlite:deadline-dock.db"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  }
+}

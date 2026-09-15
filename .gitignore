@@ -1,0 +1,16 @@
+node_modules/
+dist/
+src-tauri/target/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+*.log
+windows-build/
+deadline-dock-diagnostics.txt
+
+**/deadline-dock-backup-*.json
+.env
+.env.*
+client_secret*.json
+credentials*.json
