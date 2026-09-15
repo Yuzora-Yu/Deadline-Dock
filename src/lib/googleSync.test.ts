@@ -29,6 +29,22 @@ describe('task sync planning',()=>{
   it('blocks every duplicate UUID row',async()=>{const p=await planTaskSync(await base(),sheet([taskRow(task(),[]),taskRow(task(),[])]));expect(p.push).toHaveLength(0);expect(p.pull).toHaveLength(0);expect(p.warnings[0]).toContain('重複');});
   it('does not delete or recreate a physically removed known row',async()=>{const p=await planTaskSync(await base(),sheet([]));expect(p.push).toHaveLength(0);expect(p.pull).toHaveLength(0);expect(p.warnings[0]).toContain('保持');});
   it('pushes local soft delete as a tombstone',async()=>{const data=await base();data.tasks=[task({deleted_at:now,revision:2})];const p=await planTaskSync(data,sheet([taskRow(task(),[])]));expect(p.push[0].values[12]).toBe(now);});
+  it('quietly skips a remote tombstone absent on this PC on every sync',async()=>{
+    const deleted=task({deleted_at:now,revision:2});
+    const remote=sheet([taskRow(deleted,[]),['22222222-2222-4222-8222-222222222222','新規タスク']]);
+    for (const states of [[],(await base(deleted)).states]) {
+      const data:LocalSyncData={tasks:[],categories:[],conflicts:[],states};
+      for (let pass=0;pass<2;pass++) {
+        const p=await planTaskSync(data,remote);
+        expect(p.warnings).toEqual([]);expect(p.conflicts).toEqual([]);expect(p.push).toEqual([]);expect(p.identify).toEqual([]);
+        expect(p.pull.map(t=>t.title)).toEqual(['新規タスク']);
+      }
+    }
+  });
+  it('does not warn or recreate a deleted task after its sheet row is removed',async()=>{
+    const p=await planTaskSync(await base(task({deleted_at:now,revision:2})),sheet([]));
+    expect(p.warnings).toEqual([]);expect(p.conflicts).toEqual([]);expect(p.push).toEqual([]);expect(p.pull).toEqual([]);
+  });
   it('does not accept manual deletion-marker edits',async()=>{const row=taskRow(task(),[]);row[12]=now;const p=await planTaskSync(await base(),sheet([row]));expect(p.pull).toHaveLength(0);expect(p.warnings[0]).toContain('削除情報');});
   it('keeps relative deadline labels anchored to their original date',()=>{const t=task({deadline_label:'明日'});const row=taskRow(t,[]);expect(incomingTask(row,t,new Date('2027-01-01')).deadline.exact).toBe(t.deadline_exact);expect(incomingTask(row,undefined,new Date('2027-01-01')).deadline.label).toBe('明日');});
   it('preserves fuzzy ranges across PCs and accepts an edited date range',()=>{const t=task({deadline_type:'FUZZY_RANGE',deadline_label:'今週中',deadline_exact:null,deadline_range_start:'2026-09-13T15:00:00.000Z',deadline_range_end:'2026-09-20T14:59:59.999Z'});const row=taskRow(t,[]);expect(incomingTask(row,undefined).deadline.rangeStart).toBe(t.deadline_range_start);row[2]='2026/10/01 ～ 2026/10/10';expect(incomingTask(row,t).deadline.type).toBe('FUZZY_RANGE');});

@@ -18,3 +18,7 @@ This is a Google-side configuration change. Existing v0.1.11 downloads use the s
 The v0.1.11 executable icon is unchanged. The new logo is used for Google branding and the portal. Do not upload user tokens, client configuration JSON, or task databases with branding assets.
 
 The production configuration and published branding were verified in the console. A fresh sign-in by an unrelated Google account was not performed.
+
+## v0.1.12 sync correction
+
+Remote task deletion records whose task is absent locally are ignored without warnings. Locally deleted tasks also do not warn when their remote row is absent. Neither case recreates a task or edits the remote deletion record. Missing rows for active tasks and manual deletion-marker edits on active tasks still produce warnings. Regression tests cover repeat sync, a retained baseline, and concurrent import of an ordinary new row.

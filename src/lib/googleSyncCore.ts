@@ -110,7 +110,9 @@ export async function planTaskSync(local: LocalSyncData, remote: RemoteSheet, no
         else plan.identify.push({row_index:index,values:[crypto.randomUUID()]});
         continue;
       }
-      if (row[12] && !task) { plan.warnings.push(`行 ${index+1}: 削除済みタスク ${id} の取込を保留しました。`); continue; }
+      // A tombstone for a task absent on this PC is already reconciled.
+      // Keep it on the sheet to prevent re-import; it is not a sync problem.
+      if (row[12] && !task) continue;
       const hash=await rowHash(row);
       const localRow=task ? taskRow(task,local.categories) : null;
       if (task && localRow && sameEditable(localRow,row)) {
@@ -135,8 +137,8 @@ export async function planTaskSync(local: LocalSyncData, remote: RemoteSheet, no
   let nextRow=remote.rows.length;
   for (const task of local.tasks) {
     if (occurrences.has(task.id)) continue;
-    if (states.has(task.id)) { plan.warnings.push(`タスク「${task.title}」(${task.id}) の行がシートにありません。ローカルは保持しています。`); continue; }
     if (task.deleted_at) continue;
+    if (states.has(task.id)) { plan.warnings.push(`タスク「${task.title}」(${task.id}) の行がシートにありません。ローカルは保持しています。`); continue; }
     const row=taskRow(task,local.categories);
     plan.push.push({row_index:nextRow++,values:row}); plan.pushed.push({entity_id:task.id,local_revision:task.revision,remote_hash:await rowHash(row)});
   }
