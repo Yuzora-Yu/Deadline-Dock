@@ -2,7 +2,11 @@
 
 締切を中心に仕事を管理する、ローカル完結型のWindowsデスクトップタスク管理アプリです。
 
-Current development snapshot: **v0.1.9-dev**
+Current development snapshot: **v0.1.10-dev**
+
+## 引き継ぎ・現在の状態
+
+別PCからの再開は [最新の引き継ぎ書](docs/HANDOFF_2026-09-15.md) を最初に読んでください。Google連携のセットアップは [こちら](docs/GOOGLE_SHEETS_SETUP.md)。実タスクや認証情報はリポジトリに含みません。
 
 ## コンセプト
 
@@ -16,7 +20,7 @@ Current development snapshot: **v0.1.9-dev**
 - 過去タスクを登録フォームへ複写し、内容を編集してから新規登録
 - ミニウィンドウ、Always on Top、システムトレイ、グローバルショートカット
 - JSONバックアップ / 復元
-- ローカル機能はアカウント不要。Google Sheets連携は任意（接続・シート作成を先行実装）
+- ローカル機能はアカウント不要。Google Sheets連携は任意（タスク双方向同期・競合対応、実Google接続は確認待ち）
 
 ## 技術構成
 
@@ -133,6 +137,7 @@ Migration：
 - `src-tauri/migrations/0004_category_color.sql` — 分類色
 - `src-tauri/migrations/0005_check_items.sql` — タスク内チェック項目 + FTS再構築
 - `src-tauri/migrations/0006_google_sync.sql` — Google連携設定と同期用テーブル
+- `src-tauri/migrations/0007_task_sync.sql` — 自動同期設定・競合一意制約・送信前ジャーナル
 
 主なテーブル：
 

@@ -1,3 +1,5 @@
+import { SyncStatusBadge } from './components/SyncStatusBadge';
+import { startGoogleSync } from './lib/googleSync';
 import { useEffect, useMemo, useState } from 'react';
 import type { Category, DeadlineType, Task, TaskComposerInitial, TaskDetails, TaskFilters, TaskStatus } from './types';
 import type { Repository } from './lib/repository';
@@ -22,6 +24,12 @@ function sortTasks(tasks: Task[], sort: TaskFilters['sort'] = 'URGENCY') {
 }
 
 export function App({ repo }: { repo: Repository }) {
+  useEffect(() => startGoogleSync(), []);
+  useEffect(() => {
+    const refresh = () => setRefreshNonce(value => value + 1);
+    window.addEventListener('deadline-dock-sync-applied', refresh);
+    return () => window.removeEventListener('deadline-dock-sync-applied', refresh);
+  }, []);
   const [view, setView] = useState<View>('ACTIVE');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -77,9 +85,9 @@ export function App({ repo }: { repo: Repository }) {
     else setDetails(null);
   }
 
-  useEffect(() => { loadCategories(); }, [repo]);
+  useEffect(() => { loadCategories(); }, [repo, refreshNonce]);
   useEffect(() => { if (view === 'ACTIVE' || view === 'ARCHIVE') loadTasks(true); }, [view, query, category, postponed, deadlineType, createdFrom, createdTo, completedFrom, completedTo, status, sort, refreshNonce]);
-  useEffect(() => { if (selectedId) loadDetails(selectedId); }, [selectedId]);
+  useEffect(() => { if (selectedId) loadDetails(selectedId); }, [selectedId, refreshNonce]);
   useEffect(() => {
     if (!undoAction) return;
     const timer = window.setTimeout(() => setUndoAction(null), 7000);
@@ -171,7 +179,7 @@ export function App({ repo }: { repo: Repository }) {
         <button className={view === 'SCHEDULE' ? 'active' : ''} onClick={() => chooseView('SCHEDULE')}>予定</button>
         <button className={view === 'ARCHIVE' ? 'active' : ''} onClick={() => chooseView('ARCHIVE')}>完了済み</button>
       </nav>
-      <div className="top-actions"><button className="button secondary mini-open-button" title="ミニ画面を開く" onClick={() => { void showMiniWindow().catch(e => setError(e instanceof Error ? e.message : String(e))); }}>▣ ミニ</button><button className="icon-button" title="設定" onClick={() => chooseView('SETTINGS')}>⚙</button><button className="button primary add-button" onClick={() => { void launchComposer(); }}>＋ タスク</button></div>
+      <div className="top-actions"><SyncStatusBadge onClick={() => chooseView('SETTINGS')} /><button className="button secondary mini-open-button" title="ミニ画面を開く" onClick={() => { void showMiniWindow().catch(e => setError(e instanceof Error ? e.message : String(e))); }}>▣ ミニ</button><button className="icon-button" title="設定" onClick={() => chooseView('SETTINGS')}>⚙</button><button className="button primary add-button" onClick={() => { void launchComposer(); }}>＋ タスク</button></div>
     </header>
 
     {error && <div className="error-banner">{error}<button onClick={() => setError('')}>×</button></div>}

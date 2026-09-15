@@ -279,7 +279,7 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
 
     <section className="form-section history-section">
       <button type="button" className="history-toggle" onClick={() => setHistoryOpen(v => !v)}><span>変更履歴</span><span>{details.history.length}件 {historyOpen ? '▲' : '▼'}</span></button>
-      {historyOpen && <div className="timeline">{details.history.map(h => <div className="timeline-item" key={h.id}><div className="timeline-dot" /><div><strong>{historyText(h)}</strong><small>{formatDate(h.created_at, true)}</small></div></div>)}</div>}
+      {historyOpen && <div className="timeline">{details.history.map(h => <div className="timeline-item" key={h.id}><div className="timeline-dot" /><div><strong>{historyText(h)}</strong><small>{formatDate(h.created_at, true)}{h.actor_name?.startsWith('Google Sheets') ? ` · ${h.actor_name}` : ''}</small></div></div>)}</div>}
     </section>
 
     <div className="danger-zone"><button type="button" className="text-button danger-text" onClick={removeTask}>このタスクを削除</button></div>

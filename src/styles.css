@@ -531,3 +531,10 @@ select, input, textarea { border: 1px solid var(--line-strong); background: whit
   .check-draft-row > .icon-button,
   .task-check-row > .icon-button { grid-column: 3; grid-row: 1 / span 2; }
 }
+
+.sync-conflict { border: 1px solid #d8ae62; border-radius: 8px; padding: 12px; margin-top: 12px; }
+.sync-conflict table { width: 100%; border-collapse: collapse; margin: 12px 0; table-layout: fixed; }
+.sync-conflict th, .sync-conflict td { text-align: left; padding: 8px; border-bottom: 1px solid #c6cbd2; overflow-wrap: anywhere; white-space: pre-wrap; vertical-align: top; }
+.sync-conflict th:first-child { width: 20%; }
+.sync-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sync-status { font-size: 12px; max-width: 150px; }

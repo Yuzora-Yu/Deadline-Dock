@@ -1,6 +1,6 @@
 [package]
 name = "deadline-dock"
-version = "0.1.9"
+version = "0.1.10"
 description = "Deadline-first local task ledger"
 authors = ["Deadline Dock"]
 edition = "2021"
@@ -33,6 +33,13 @@ rand = "0.8"
 sha2 = "0.10"
 base64 = "0.22"
 url = "2"
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 http = "1"
+
+# Keep local Windows builds small; full symbols can be enabled explicitly when debugging.
+[profile.dev]
+debug = 0
+incremental = false

@@ -14,12 +14,13 @@ use tokio::{
     sync::Mutex,
 };
 
-const WORKSPACE: &str = "00000000-0000-4000-8000-000000000001";
+pub(crate) const WORKSPACE: &str = "00000000-0000-4000-8000-000000000001";
 const SCOPE: &str = "openid email profile https://www.googleapis.com/auth/drive.file";
-const DB_ERROR: &str = "連携設定を保存・読み込みできません。アプリを再起動してください。";
+pub(crate) const DB_ERROR: &str =
+    "連携設定を保存・読み込みできません。アプリを再起動してください。";
 #[derive(Default)]
 pub struct GoogleState {
-    operation: Mutex<()>,
+    pub(crate) operation: Mutex<()>,
 }
 #[derive(Serialize)]
 pub struct Connection {
@@ -29,17 +30,21 @@ pub struct Connection {
     enabled: bool,
     initialized: bool,
     credential_available: bool,
+    auto_sync: bool,
+    poll_seconds: i64,
+    last_success_at: Option<String>,
+    last_error: Option<String>,
 }
 fn secure_entry(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("DeadlineDock", name)
         .map_err(|_| "Windows資格情報にアクセスできません。".into())
 }
-fn random_secret() -> String {
+pub(crate) fn random_secret() -> String {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
-async fn pool(app: &tauri::AppHandle) -> Result<SqlitePool, String> {
+pub(crate) async fn pool(app: &tauri::AppHandle) -> Result<SqlitePool, String> {
     let databases = app.state::<tauri_plugin_sql::DbInstances>();
     let instances = databases.0.read().await;
     match instances.get("sqlite:deadline-dock.db") {
@@ -47,7 +52,7 @@ async fn pool(app: &tauri::AppHandle) -> Result<SqlitePool, String> {
         _ => Err(DB_ERROR.into()),
     }
 }
-fn client() -> Result<Client, String> {
+pub(crate) fn client() -> Result<Client, String> {
     Client::builder()
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
@@ -90,13 +95,13 @@ fn valid_id(id: &str) -> bool {
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
-fn sheet_url(id: &str) -> Result<String, String> {
+pub(crate) fn sheet_url(id: &str) -> Result<String, String> {
     if !valid_id(id) {
         return Err("スプレッドシートIDが不正です。".into());
     }
     Ok(format!("https://docs.google.com/spreadsheets/d/{id}/edit"))
 }
-async fn settings(db: &SqlitePool) -> Result<sqlx::sqlite::SqliteRow, String> {
+pub(crate) async fn settings(db: &SqlitePool) -> Result<sqlx::sqlite::SqliteRow, String> {
     sqlx::query("SELECT * FROM google_sync_settings WHERE workspace_id=?")
         .bind(WORKSPACE)
         .fetch_one(db)
@@ -119,6 +124,10 @@ pub async fn google_status(app: tauri::AppHandle) -> Result<Connection, String> 
         enabled: row.get::<i64, _>("enabled") != 0,
         initialized: row.get::<i64, _>("initialized") != 0,
         credential_available: available,
+        auto_sync: row.get::<i64, _>("auto_sync") != 0,
+        poll_seconds: row.get("poll_seconds"),
+        last_success_at: row.get("last_success_at"),
+        last_error: row.get("last_error"),
     })
 }
 #[tauri::command]
@@ -289,7 +298,7 @@ pub async fn google_connect(
     prepare(&db).await?;
     google_status(app).await
 }
-async fn access_token(db: &SqlitePool) -> Result<String, String> {
+pub(crate) async fn access_token(db: &SqlitePool) -> Result<String, String> {
     let row = settings(db).await?;
     let id: String = row.get("client_id");
     let sub: Option<String> = row.get("google_sub");
@@ -360,7 +369,7 @@ async fn prepare(db: &SqlitePool) -> Result<(), String> {
             .as_array()
             .ok_or("Google Driveの応答が不正です。")?;
         if files.len() > 1 || found["nextPageToken"].is_string() {
-            return Err("連携候補が複数あります。Google Driveで利用する1つを残し、他の候補のappPropertiesを管理してから再試行してください。".into());
+            return Err("連携候補が複数あります。「既存の同期シートを探す」から利用するシートを選択してください。".into());
         }
         let file = if let Some(file) = files.first() {
             file.clone()
@@ -400,6 +409,7 @@ async fn initialize_sheet(http: &Client, token: &str, id: &str) -> Result<(), St
                 "完了日",
                 "revision",
                 "deleted_at",
+                "deadline_data",
             ],
         ),
         (
@@ -460,9 +470,16 @@ async fn initialize_sheet(http: &Client, token: &str, id: &str) -> Result<(), St
         (105, "SyncMeta", vec!["key", "value"]),
     ];
     let mut requests = Vec::new();
+    if !sheets.iter().any(|s| s["properties"]["sheetId"] == 100) {
+        requests.push(json!({"updateSpreadsheetProperties":{"properties":{"locale":"ja_JP","timeZone":"Asia/Tokyo"},"fields":"locale,timeZone"}}));
+    }
     for (sid, title, headers) in definitions {
         // Fixed IDs survive renaming. Existing tabs are never rewritten during reconnect.
         if sheets.iter().any(|s| s["properties"]["sheetId"] == sid) {
+            if sid == 100 {
+                requests.push(json!({"updateCells":{"start":{"sheetId":100,"rowIndex":0,"columnIndex":13},"rows":[{"values":[{"userEnteredValue":{"stringValue":"deadline_data"}}]}],"fields":"userEnteredValue"}}));
+                requests.push(json!({"updateDimensionProperties":{"range":{"sheetId":100,"dimension":"COLUMNS","startIndex":11,"endIndex":14},"properties":{"hiddenByUser":true},"fields":"hiddenByUser"}}));
+            }
             continue;
         }
         if sheets.iter().any(|s| s["properties"]["title"] == title) {
@@ -488,7 +505,7 @@ async fn initialize_sheet(http: &Client, token: &str, id: &str) -> Result<(), St
             requests.push(json!({"setBasicFilter":{"filter":{"range":{"sheetId":sid,"startRowIndex":0,"endColumnIndex":headers.len()}}}}));
             requests.push(json!({"updateDimensionProperties":{"range":{"sheetId":sid,"dimension":"COLUMNS","startIndex":0,"endIndex":headers.len()},"properties":{"pixelSize":170},"fields":"pixelSize"}}));
             let hidden = if sid == 100 {
-                vec![(0, 1), (11, 13)]
+                vec![(0, 1), (11, 14)]
             } else if sid == 104 {
                 vec![(0, 1), (5, 6)]
             } else {
@@ -651,4 +668,114 @@ mod tests {
             assert!(!http_error(code).contains("token"));
         }
     }
+}
+
+#[tauri::command]
+pub async fn google_find_sheets(
+    app: tauri::AppHandle,
+    state: State<'_, GoogleState>,
+) -> Result<Vec<Value>, String> {
+    let _guard = state
+        .operation
+        .try_lock()
+        .map_err(|_| "Google連携の処理中です。")?;
+    let db = pool(&app).await?;
+    let token = access_token(&db).await?;
+    let http = client()?;
+    let query=format!("trashed = false and mimeType = 'application/vnd.google-apps.spreadsheet' and appProperties has {{ key='deadlineDock' and value='true' }} and appProperties has {{ key='workspaceId' and value='{WORKSPACE}' }}");
+    let mut found = Vec::new();
+    let mut page = String::new();
+    loop {
+        let response = decode(
+            http.get("https://www.googleapis.com/drive/v3/files")
+                .bearer_auth(&token)
+                .query(&[
+                    ("q", query.as_str()),
+                    ("fields", "files(id,name),nextPageToken"),
+                    ("pageSize", "100"),
+                    ("pageToken", page.as_str()),
+                ])
+                .send()
+                .await,
+        )
+        .await?;
+        if let Some(files) = response["files"].as_array() {
+            found.extend(files.iter().cloned());
+        }
+        page = response["nextPageToken"].as_str().unwrap_or("").into();
+        if page.is_empty() {
+            break;
+        }
+        if found.len() >= 1000 {
+            return Err("候補が1000件以上あります。Google Driveで整理してください。".into());
+        }
+    }
+    Ok(found)
+}
+async fn attach_sheet(db: &SqlitePool, id: &str) -> Result<(), String> {
+    let previous = settings(db)
+        .await?
+        .get::<Option<String>, _>("spreadsheet_id");
+    let mut tx = db.begin().await.map_err(|_| DB_ERROR)?;
+    sqlx::query("UPDATE google_sync_settings SET spreadsheet_id=?,spreadsheet_url=?,initialized=0,enabled=0 WHERE workspace_id=?").bind(id).bind(sheet_url(id)?).bind(WORKSPACE).execute(&mut *tx).await.map_err(|_|DB_ERROR)?;
+    if previous.as_deref() != Some(id) {
+        sqlx::query("DELETE FROM sync_entity_state")
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| DB_ERROR)?;
+        sqlx::query("UPDATE sync_conflicts SET resolved_at=datetime('now'),resolution='SHEET_REPLACED' WHERE resolved_at IS NULL").execute(&mut *tx).await.map_err(|_|DB_ERROR)?;
+    }
+    tx.commit().await.map_err(|_| DB_ERROR)?;
+    Ok(())
+}
+#[tauri::command]
+pub async fn google_select_sheet(
+    app: tauri::AppHandle,
+    state: State<'_, GoogleState>,
+    spreadsheet_id: String,
+) -> Result<Connection, String> {
+    let _guard = state
+        .operation
+        .try_lock()
+        .map_err(|_| "Google連携の処理中です。")?;
+    sheet_url(&spreadsheet_id)?;
+    let db = pool(&app).await?;
+    let token = access_token(&db).await?;
+    let file = decode(
+        client()?
+            .get(format!(
+                "https://www.googleapis.com/drive/v3/files/{spreadsheet_id}"
+            ))
+            .query(&[("fields", "id,mimeType,trashed,appProperties")])
+            .bearer_auth(&token)
+            .send()
+            .await,
+    )
+    .await?;
+    if file["trashed"] == true
+        || file["mimeType"] != "application/vnd.google-apps.spreadsheet"
+        || file["appProperties"]["deadlineDock"] != "true"
+        || file["appProperties"]["workspaceId"] != WORKSPACE
+    {
+        return Err("このファイルはDeadline Dockの同期先ではありません。".into());
+    }
+    attach_sheet(&db, &spreadsheet_id).await?;
+    prepare(&db).await?;
+    google_status(app).await
+}
+#[tauri::command]
+pub async fn google_new_sheet(
+    app: tauri::AppHandle,
+    state: State<'_, GoogleState>,
+) -> Result<Connection, String> {
+    let _guard = state
+        .operation
+        .try_lock()
+        .map_err(|_| "Google連携の処理中です。")?;
+    let db = pool(&app).await?;
+    let token = access_token(&db).await?;
+    let file=decode(client()?.post("https://www.googleapis.com/drive/v3/files").query(&[("fields","id")]).bearer_auth(&token).json(&json!({"name":"Deadline Dock タスク同期","mimeType":"application/vnd.google-apps.spreadsheet","appProperties":{"deadlineDock":"true","schemaVersion":"1","workspaceId":WORKSPACE}})).send().await).await?;
+    attach_sheet(&db, field(&file, "id")?).await?;
+    prepare(&db).await?;
+    google_status(app).await
 }

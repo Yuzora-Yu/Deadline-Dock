@@ -61,7 +61,20 @@ export async function getRepository(): Promise<Repository> {
       const isTauri = '__TAURI_INTERNALS__' in window;
       if (isTauri) {
         const { SqliteRepository } = await import('./sqliteRepository');
-        return new SqliteRepository();
+        const repository = new SqliteRepository();
+        return new Proxy(repository, {
+          get(target, property, receiver) {
+            const value = Reflect.get(target, property, receiver);
+            if (typeof value !== 'function') return value;
+            if (!/^(create|update|set|delete|restore|duplicate|rename|move|add|toggle|import)/.test(String(property))) return value.bind(target);
+            return async (...args: unknown[]) => {
+              const result = await Reflect.apply(value, target, args);
+              window.dispatchEvent(new Event('deadline-dock-local-mutation'));
+              void import('@tauri-apps/api/event').then(({ emit }) => emit('deadline-dock-local-mutation')).catch(() => {});
+              return result;
+            };
+          }
+        });
       }
       const { BrowserRepository } = await import('./browserRepository');
       return new BrowserRepository();

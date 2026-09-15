@@ -133,7 +133,7 @@ export class SqliteRepository implements Repository {
       db.select<ScheduleEvent[]>('SELECT * FROM schedule_events WHERE task_id=? AND deleted_at IS NULL ORDER BY starts_at ASC', [taskId]),
       db.select<Resource[]>('SELECT * FROM resources WHERE task_id=? AND deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC', [taskId]),
       db.select<CheckItem[]>('SELECT * FROM task_check_items WHERE task_id=? AND deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC', [taskId]),
-      db.select<HistoryEntry[]>('SELECT * FROM task_history WHERE task_id=? ORDER BY created_at DESC', [taskId])
+      db.select<HistoryEntry[]>('SELECT h.*, a.display_name AS actor_name FROM task_history h LEFT JOIN actors a ON a.id=h.actor_id WHERE h.task_id=? ORDER BY h.created_at DESC', [taskId])
     ]);
     return { task: tasks[0], events, resources, checkItems, history };
   }
@@ -261,6 +261,7 @@ export class SqliteRepository implements Repository {
   async renameCategory(id: string, name: string): Promise<void> {
     const db = await this.db();
     await db.execute('UPDATE categories SET name=?, updated_at=? WHERE id=? AND deleted_at IS NULL', [name.trim(), nowIso(), id]);
+    await db.execute('UPDATE tasks SET revision=revision+1, updated_at=? WHERE category_id=?', [nowIso(), id]);
   }
 
   async setCategoryColor(id: string, color: CategoryColor): Promise<void> {
@@ -485,6 +486,10 @@ export class SqliteRepository implements Repository {
 
   async importSnapshot(snapshot: BackupSnapshot): Promise<void> {
     assertBackupSnapshot(snapshot);
+    const db = await this.db();
+    // Restored revisions can equal old revisions with different contents. Require an explicit reconnect.
+    await db.execute('UPDATE google_sync_settings SET enabled=0,auto_sync=0');
+    await db.execute('DELETE FROM sync_entity_state');
     const safety = await this.exportSnapshot();
     try {
       await this.replaceSnapshot(snapshot);

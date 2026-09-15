@@ -76,6 +76,7 @@ export interface CheckItem {
 }
 
 export interface HistoryEntry {
+  actor_name?: string;
   id: string;
   task_id: string;
   actor_id: string;

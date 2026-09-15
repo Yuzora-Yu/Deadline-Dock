@@ -14,3 +14,9 @@ deadline-dock-diagnostics.txt
 .env.*
 client_secret*.json
 credentials*.json
+
+backups/
+src-tauri/gen/
+coverage/
+_preview*/
+_preview*

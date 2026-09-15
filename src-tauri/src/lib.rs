@@ -1,4 +1,5 @@
 mod google;
+mod task_sync;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -66,6 +67,12 @@ pub fn run() {
             sql: include_str!("../migrations/0006_google_sync.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "task_sync",
+            sql: include_str!("../migrations/0007_task_sync.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -77,7 +84,19 @@ pub fn run() {
             google::google_connect,
             google::google_disconnect,
             google::google_prepare_sheet,
-            google::google_open_sheet
+            google::google_open_sheet,
+            google::google_find_sheets,
+            google::google_select_sheet,
+            google::google_new_sheet,
+            task_sync::google_local_sync_data,
+            task_sync::google_read_tasks,
+            task_sync::google_write_tasks,
+            task_sync::google_apply_tasks,
+            task_sync::google_acknowledge,
+            task_sync::google_conflicts,
+            task_sync::google_resolve_conflict,
+            task_sync::google_sync_preferences,
+            task_sync::google_sync_report
         ])
         .plugin(
             tauri_plugin_sql::Builder::default()

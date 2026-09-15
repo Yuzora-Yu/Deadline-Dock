@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 import zipfile
 
-SKIP_PARTS = {"node_modules", "target", "dist", ".git", "windows-build", "backups"}
+SKIP_PARTS = {"node_modules", "target", "dist", ".git", "windows-build", "backups", "coverage", "gen"}
 
 
 def files_under(source: Path):
@@ -20,7 +20,7 @@ def files_under(source: Path):
             continue
         if any(part in SKIP_PARTS for part in path.relative_to(source).parts):
             continue
-        if path.name.startswith(("deadline-dock-backup-", "client_secret", "credentials")) or path.suffix in {".db", ".log"} or path.name.startswith(".env"):
+        if path.name.startswith(("_preview", "deadline-dock-backup-", "client_secret", "credentials")) or path.suffix in {".db", ".log"} or path.name.startswith(".env"):
             continue
         yield path
 
