@@ -21,4 +21,18 @@ The production configuration and published branding were verified in the console
 
 ## v0.1.12 sync correction
 
-Remote task deletion records whose task is absent locally are ignored without warnings. Locally deleted tasks also do not warn when their remote row is absent. Neither case recreates a task or edits the remote deletion record. Missing rows for active tasks and manual deletion-marker edits on active tasks still produce warnings. Regression tests cover repeat sync, a retained baseline, and concurrent import of an ordinary new row.
+Deleting a task immediately requests automatic synchronization. The task row and its checklist, event, and resource rows are physically removed from Sheets. Existing visible deletion records are cleaned on the next sync. Offline changes wait for reconnection; automatic sync must be enabled.
+
+A hidden `削除の同期記録` tab retains only task IDs, deletion/undo state, operation IDs and timestamps. This prevents another PC from recreating deleted tasks. Both PCs must run v0.1.12 or newer. Deletion metadata and row removal are sent in one batch, with a fresh snapshot check before writing and no blind retry of positional deletes. Sheets has no transactional compare-and-swap with manual edits; avoid simultaneous structural row edits while syncing.
+
+SQLite migration 10 cascades soft deletion to child records. Undo restores only children deleted with the parent, preserving earlier individual deletions. A durable operation ID guards acknowledgements against a concurrent local undo. Restored records lose stale synchronization baselines so they can be uploaded again. Local history and undo data remain on the PC; shared categories are retained. Event/resource content synchronization remains unsupported, but their rows are cleaned when the parent is deleted.
+
+Regression tests cover deletion selection, stale PCs, explicit undo, repeated deletion, local cascade, acknowledgement races, and preservation of individually deleted children. Missing rows for active tasks still produce warnings.
+
+## Sheet maintenance
+
+Every sync checks the sheet structure. Missing fixed-ID tabs and blank header cells are restored. Nonempty mismatched headers stop synchronization to protect task rows from column shifts. A recreated tab gets a new developer-metadata generation; migration 11 records it per spreadsheet and tab. Changed generations reset only that entity type's baseline, including recovery after a lost creation reply. Unrelated tabs and input values are preserved.
+
+The explicit layout repair action applies the same presentation as new sheets: forest-green headers, meaningful column widths, frozen titles, dropdowns, checkboxes and header notes. Administrative columns are hidden. Ordinary sync does not reset a user's layout. A renamed conflicting tab with a different ID is never adopted or overwritten automatically.
+
+Verified against Google Sheets API using a separate synthetic file: fresh setup without Sheet1, two repairs with unchanged input values, parent and three child-tab row deletion, repeated deletion, missing checklist tab recreation, and metadata idempotency. The test file was moved to trash after completion. API reference: https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request

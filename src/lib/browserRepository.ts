@@ -184,6 +184,9 @@ export class BrowserRepository implements Repository {
   async deleteTask(taskId: string) {
     const t = this.task(taskId); const now = nowIso();
     t.deleted_at = now; t.updated_at = now; t.revision++;
+    for (const child of [...this.store.checkItems, ...this.store.events, ...this.store.resources]) {
+      if (child.task_id === taskId && !child.deleted_at) { child.deleted_at = now; child.updated_at = now; }
+    }
     this.log(taskId, 'TASK_DELETED', { title: t.title }, undefined); this.save();
   }
 
@@ -194,6 +197,9 @@ export class BrowserRepository implements Repository {
     t.deleted_at = null;
     t.updated_at = nowIso();
     t.revision++;
+    for (const child of [...this.store.checkItems, ...this.store.events, ...this.store.resources]) {
+      if (child.task_id === taskId && child.deleted_at === old) { child.deleted_at = null; child.updated_at = t.updated_at; }
+    }
     this.log(taskId, 'TASK_RESTORED', old, null);
     this.save();
   }
@@ -293,4 +299,3 @@ export class BrowserRepository implements Repository {
     this.save();
   }
 }
-

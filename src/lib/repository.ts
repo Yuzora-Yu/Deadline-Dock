@@ -71,6 +71,10 @@ export async function getRepository(): Promise<Repository> {
               const result = await Reflect.apply(value, target, args);
               window.dispatchEvent(new Event('deadline-dock-local-mutation'));
               void import('@tauri-apps/api/event').then(({ emit }) => emit('deadline-dock-local-mutation')).catch(() => {});
+              if (property==='deleteTask' || property==='restoreTask') {
+                window.dispatchEvent(new Event('deadline-dock-task-lifecycle'));
+                void import('@tauri-apps/api/event').then(({emit})=>emit('deadline-dock-task-lifecycle')).catch(()=>{});
+              }
               return result;
             };
           }

@@ -48,6 +48,7 @@ export function GoogleSyncSettings() {
             <button className="button secondary" disabled={busy || !connection.spreadsheet_url} onClick={() => void run(() => invoke('google_open_sheet'), '')}>スプレッドシートを開く</button>
             <button className="button secondary" disabled={busy || !connection.spreadsheet_url} onClick={() => void run(() => navigator.clipboard.writeText(connection.spreadsheet_url!), 'URLをコピーしました。')}>URLをコピー</button>
           </div>
+          <div className="settings-action-row"><div><strong>シートのレイアウト</strong><small>入力内容を保ったまま、列幅・見出し・入力候補を整えます。不足するタブは同期時にも自動追加します。</small></div><button className="button secondary" disabled={busy || !connection.initialized} onClick={()=>void run(async()=>{await invoke('google_repair_sheet');await syncNow();},'シートのレイアウトを整えました。')}>レイアウトを整える</button></div>
           <details className="google-advanced"><summary>接続の管理・同期先の変更</summary><div className="google-advanced-body">
             <div className="sync-actions"><button className="button secondary" disabled={busy} onClick={() => void run(async () => { await invoke('google_prepare_sheet'); await syncNow(); }, '同期先を確認しました。')}>{connection.initialized ? '接続を確認' : 'シート作成を再試行'}</button>
             <button className="button secondary" disabled={busy} onClick={() => void run(() => invoke('google_disconnect'), 'このPCのGoogle連携を解除しました。')}>Google連携を解除</button></div>
@@ -59,10 +60,10 @@ export function GoogleSyncSettings() {
         </>}
         {connection?.email && <>
           <div className="settings-action-row"><div><strong>{progress.message}</strong><small>最終同期: {connection.last_success_at ? new Date(connection.last_success_at.replace(' ','T')+'Z').toLocaleString('ja-JP') : 'まだありません'}</small></div><button className="button primary" disabled={busy || !connection.initialized} onClick={() => void run(() => syncNow(), '')}>今すぐ同期</button></div>
-          <div className="settings-action-row"><div><label className="google-auto-label"><input type="checkbox" checked={connection.auto_sync} disabled={busy} onChange={e => void run(() => invoke('google_sync_preferences',{autoSync:e.target.checked,pollSeconds:connection.poll_seconds}), '')} /> 自動同期</label><small>アプリの保存後は約3秒で送信。シート側の変更は定期確認します。</small></div><select aria-label="シートの確認間隔" value={connection.poll_seconds} disabled={busy} onChange={e=>void run(()=>invoke('google_sync_preferences',{autoSync:connection.auto_sync,pollSeconds:Number(e.target.value)}),'')}><option value={60}>1分ごとに確認</option><option value={120}>2分ごとに確認</option><option value={300}>5分ごとに確認</option></select></div>
+          <div className="settings-action-row"><div><label className="google-auto-label"><input type="checkbox" checked={connection.auto_sync} disabled={busy} onChange={e => void run(() => invoke('google_sync_preferences',{autoSync:e.target.checked,pollSeconds:connection.poll_seconds}), '')} /> 自動同期</label><small>保存後は約3秒、削除・取消はすぐに同期を開始します。オフライン中は接続回復後に反映します。</small></div><select aria-label="シートの確認間隔" value={connection.poll_seconds} disabled={busy} onChange={e=>void run(()=>invoke('google_sync_preferences',{autoSync:connection.auto_sync,pollSeconds:Number(e.target.value)}),'')}><option value={60}>1分ごとに確認</option><option value={120}>2分ごとに確認</option><option value={300}>5分ごとに確認</option></select></div>
           {(progress.warnings.length>0 || connection.last_error) && <div className="settings-message" role="status">{(progress.warnings.length ? progress.warnings : [connection.last_error!]).map((text,i)=><p key={i}>{text}</p>)}</div>}
           {data && <SyncConflictDialog conflicts={data.conflicts} categories={data.categories} busy={busy} onResolve={(id,resolution)=>void run(async()=>{await invoke('google_resolve_conflict',{id,resolution});await syncNow();},'')} />}
-          <p className="google-privacy-note">同期対象：タスク・分類・チェック項目。シートの行を削除してもアプリのデータは残ります。予定・関連リンクの同期は準備中です。</p>
+          <p className="google-privacy-note">同期対象：タスク・分類・チェック項目。アプリでタスクを削除すると、シートの該当行と関連するチェック項目・予定・リンクの行も削除します。シートで直接行を削除してもアプリのデータは残ります。予定・関連リンクの内容の同期は準備中です。</p>
         </>}
       </>}
       {message && <div className="settings-message" role="status">{message}</div>}

@@ -36,7 +36,6 @@ export async function synchronizeTasks(transport: SyncTransport): Promise<SyncRe
 let busy=false;
 let queued=false;
 let queuedManual=false;
-let preparedUrl:string | null=null;
 let failures=0;
 let retryAt=0;
 let state: {busy:boolean; message:string; warnings:string[]}={busy:false,message:'未同期',warnings:[]};
@@ -56,7 +55,8 @@ export async function syncNow(manual=true):Promise<void> {
     if (!manual && !connection.auto_sync) return;
     if (!connection.initial_sync_confirmed) {publish({busy:false,message:'初回同期の確認待ち',warnings:['設定のGoogle Sheets連携で、両方のタスクを確認して同期を開始してください。']});return;}
     publish({...state,busy:true,message:'同期中…'});
-    if (preparedUrl!==connection.spreadsheet_url) {await invoke('google_prepare_sheet');preparedUrl=connection.spreadsheet_url;}
+    await invoke('google_prepare_sheet');
+    const lifecycle=await invoke<{changed:boolean}>('google_sync_task_lifecycle');
     const categories=await invoke<{warnings:string[];changed:boolean}>('google_sync_related',{entityType:'CATEGORY'});
     const result=await synchronizeTasks(desktopTransport);
     const checks=await invoke<{warnings:string[];changed:boolean}>('google_sync_related',{entityType:'CHECK_ITEM'});
@@ -64,7 +64,7 @@ export async function syncNow(manual=true):Promise<void> {
     const message=result.conflicts?'同期競合あり':issues.length?'同期警告あり':result.pending?`同期待ち ${result.pending}件`:'同期済み';
     await invoke('google_sync_report',{error:issues.length ? issues.join('\n').slice(0,10000) : result.pending ? message : null});
     failures=0;retryAt=0;publish({busy:false,message,warnings:issues});
-    if (result.changed || categories.changed || checks.changed) window.dispatchEvent(new Event('deadline-dock-sync-applied'));
+    if (lifecycle.changed || result.changed || categories.changed || checks.changed) window.dispatchEvent(new Event('deadline-dock-sync-applied'));
   } catch(error) {
     failures++;retryAt=Date.now()+Math.min(300000,5000*2**Math.min(failures-1,6));
     const message=readableSyncError(error);publish({busy:false,message:'同期待ち・エラー',warnings:[message]});
@@ -86,8 +86,11 @@ export function startGoogleSync():()=>void {
     if (!disposed) polling=setTimeout(()=>void poll(),delay);
   }
   const stopEvent=listen('deadline-dock-local-mutation',trigger);
+  const deleted=()=>{clearTimeout(debounce);void syncNow(false);};
+  const stopDeleted=listen('deadline-dock-task-lifecycle',deleted);
+  window.addEventListener('deadline-dock-task-lifecycle',deleted);
   window.addEventListener('deadline-dock-local-mutation',trigger);
   window.addEventListener('focus',immediate);window.addEventListener('online',immediate);
   void poll();
-  return ()=>{disposed=true;clearTimeout(debounce);clearTimeout(polling);window.removeEventListener('deadline-dock-local-mutation',trigger);window.removeEventListener('focus',immediate);window.removeEventListener('online',immediate);void stopEvent.then(stop=>stop()).catch(()=>{});};
+  return ()=>{disposed=true;clearTimeout(debounce);clearTimeout(polling);window.removeEventListener('deadline-dock-local-mutation',trigger);window.removeEventListener('focus',immediate);window.removeEventListener('online',immediate);void stopEvent.then(stop=>stop()).catch(()=>{});window.removeEventListener('deadline-dock-task-lifecycle',deleted);void stopDeleted.then(stop=>stop()).catch(()=>{});};
 }

@@ -1,9 +1,13 @@
-# Google連携 作業結果（2026-09-15）
+# Google連携 作業結果（2026-09-15 / v0.1.12）
 
-現在はv0.1.10。詳細と別PCでの再開手順は [最新の引き継ぎ書](HANDOFF_2026-09-15.md) を参照してください。
+現在の実装と公開設定は [GOOGLE_PRODUCTION.md](GOOGLE_PRODUCTION.md)、変更点は [CHANGELOG.md](CHANGELOG.md) を参照してください。v0.1.10時点の引き継ぎ書は過去の記録です。
 
-Phase 1の接続基盤に加え、Phase 2のタスク双方向同期、競合の比較・採用、履歴、ポーリングを実装しました。復旧用シート選択・再作成とAPI再試行も追加しています。Phase 3の関連データ同期は未実装です。
+- タスク・分類・チェック項目の双方向同期、初回合算確認、競合比較を実装済み。
+- 親タスク削除時の子データ削除、削除同期用の非表示タブ、不足タブの再作成、レイアウト修復に対応。
+- 予定・関連リンクは内容の独立同期が未対応。親タスク削除時の行整理のみ対応。
+- TypeScript 30件、Rust 30件、既存検証67項目を通過。Google実APIによる検証用シートでの修復・削除・再作成テストも成功。
+- 2台の実PCを同時接続した試験は未実施。両方のPCをv0.1.12以降に揃えること。
 
-模擬同期テスト22件、Rustテスト10件、既存検証59項目、TypeScriptチェックとフロントエンドビルドが成功。模擬ブラウザ画面でも設定と競合UIを確認しました。実Googleアカウントでの認証・同期、実デスクトップでのE2Eは未検証です。
+作業先: `C:\Users\surfa\Documents\12-アプリ開発\Deadline-Dock`。実データは `%APPDATA%\local.deadlinedock.app\deadline-dock.db`。認証情報・実データ・バックアップはGitと配布物に含めません。
 
-作業先は `C:\Users\ship2\Documents\06-Yu-zora\deadline-dock`。実データDBは従来のAppData内を維持。バックアップと認証情報をGitから除外しています。ソースと引き継ぎ書の保管先はGitHubのmainです。v0.1.10のWindowsインストーラー生成とSHA-256照合も成功しました。
+実API試験は `src-tauri/src/live_checks.rs` の無効化済みテストです。利用者の明示的な承認がある環境でのみ、`DEADLINE_DOCK_LIVE_AUTH_DB` に既存DBを指定して `cargo test live_google_maintenance -- --ignored --nocapture` を実行します。認証DBは読取専用で使用し、別の合成データ専用シートを作成して終了時にゴミ箱へ移します。

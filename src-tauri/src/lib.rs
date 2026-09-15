@@ -2,6 +2,10 @@ mod google;
 mod related_sync;
 mod sync_onboarding;
 mod task_sync;
+mod task_lifecycle;
+mod sheet_layout;
+#[cfg(test)]
+mod live_checks;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -87,6 +91,18 @@ pub fn run() {
             sql: include_str!("../migrations/0009_sync_confirmation.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "task_lifecycle",
+            sql: include_str!("../migrations/0010_task_lifecycle.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "Track recreated sync sheets",
+            sql: include_str!("../migrations/0011_sheet_generations.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -98,6 +114,7 @@ pub fn run() {
             google::google_connect,
             google::google_disconnect,
             google::google_prepare_sheet,
+            sheet_layout::google_repair_sheet,
             google::google_open_sheet,
             google::google_find_sheets,
             google::google_select_sheet,
@@ -113,6 +130,7 @@ pub fn run() {
             task_sync::google_conflicts,
             task_sync::google_resolve_conflict,
             task_sync::google_sync_preferences,
+            task_lifecycle::google_sync_task_lifecycle,
             task_sync::google_sync_report
         ])
         .plugin(

@@ -133,7 +133,7 @@ pub(crate) async fn local_rows(
     let query = if kind == Kind::Category {
         "SELECT id,name,color,sort_order,updated_at,deleted_at FROM categories WHERE workspace_id=? ORDER BY sort_order,id"
     } else {
-        "SELECT c.*,t.title,t.deleted_at AS parent_deleted FROM task_check_items c JOIN tasks t ON t.id=c.task_id WHERE t.workspace_id=? ORDER BY c.sort_order,c.id"
+        "SELECT c.*,t.title,t.deleted_at AS parent_deleted FROM task_check_items c JOIN tasks t ON t.id=c.task_id WHERE t.workspace_id=? AND t.deleted_at IS NULL ORDER BY c.sort_order,c.id"
     };
     let mut result = BTreeMap::new();
     for r in sqlx::query(query)
