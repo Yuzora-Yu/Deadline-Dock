@@ -6,6 +6,7 @@ Set-Location $root
 Refresh-DeadlineDockPath
 
 try {
+    Import-DeadlineDockGoogleOAuth
     Write-Host 'Deadline Dock を開発モードで起動します。' -ForegroundColor Green
     Write-Host 'この黒い画面はアプリ実行中は閉じないでください。'
     Write-Host 'アプリを終えるときは、タスクトレイの Deadline Dock →「終了」を使ってください。' -ForegroundColor Cyan

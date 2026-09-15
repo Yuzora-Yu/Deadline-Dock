@@ -4,10 +4,21 @@
 
 ## 現在の範囲
 
-v0.1.10ではGoogle接続とタスク双方向同期を実装しています。接続後は初回送信と自動同期が動きます。分類の色・並び順、チェック項目、予定、関連先の独立した同期は未実装です。
+v0.1.10ではGoogle接続とタスク双方向同期を実装しています。接続後は初回送信と自動同期が動きます。分類の名前・色・並び順とチェック項目の双方向同期を追加しました。予定・関連先の独立した同期は未実装です。
 実Googleアカウントでの動作確認は未実施です。最初はテスト用データで確認してください。詳しい検証状況は [引き継ぎ書](HANDOFF_2026-09-15.md) を参照してください。
 
-## Google Cloudの準備
+## 利用者の接続手順（アプリ共通設定を組み込んだ版）
+
+1. 設定で「Googleと連携」を押します。
+2. このPCのブラウザでGoogleアカウントを選び、アクセスを許可します。
+3. 専用スプレッドシートを自動作成（既存の連携用シートがあれば再利用）します。
+4. 初回同期の件数と合算ルールを確認し、「両方を残して同期」を押します。
+
+利用者がClient IDやクライアントシークレットを入力する必要はありません。開発者用OAuthクライアントを作成済みです。設定を組み込んでいないビルドでは接続ボタンが無効となり準備中の案内を表示します。実Googleでの動作確認はまだ行っていません。
+
+## 開発者が一度だけ行うGoogle Cloudの準備
+
+アプリ提供者がDeadline Dock用のDesktop app OAuthクライアントを用意します。以下の手動入力は独自クライアントの検証用で、設定画面の「開発者向け設定」内にあります。
 
 1. Google Cloud Consoleでプロジェクトを作成します。
 2. APIライブラリで **Google Drive API** と **Google Sheets API** を有効にします。
@@ -24,6 +35,23 @@ v0.1.10ではGoogle接続とタスク双方向同期を実装しています。�
 Desktop appのclient secretはサーバー秘密鍵ではありませんが、アプリではWindows資格情報に保存し、JSONバックアップに含めません。Googleのtoken endpointが要求するためClient IDと併せて設定します。
 
 Testingの外部向けOAuthアプリでdrive.fileを利用する場合、refresh tokenには通常7日間の期限があります。常用時は公開ステータスとGoogleの要件を確認してください。
+
+## アプリ共通設定の組み込み
+
+Google CloudからダウンロードしたDesktop appのJSONを、リポジトリ直下の`client_secret.desktop.json`に保存します。このファイルはGit対象外です。Windowsの起動・ビルド用cmdはこのJSONを自動で読み込みます。別PCでは安全な方法で個別に配置してください。JSONを配布ZIPへ含めないでください。
+
+または、ビルドを実行するプロセスの環境変数にDesktop appの値を設定します。明示した環境変数を優先し、片方だけの指定はエラーにします。
+
+- `DEADLINE_DOCK_GOOGLE_CLIENT_ID`
+- `DEADLINE_DOCK_GOOGLE_CLIENT_SECRET`
+
+その環境から`npm run tauri -- dev`または`npm run tauri -- build --bundles nsis`を実行します。変更した場合はビルド／開発プロセスを再起動してください。`.env`の自動読み込みはありません。値をGitやチャットに貼らず、ローカル環境または配布ビルド用の環境設定で管理します。
+
+Desktop OAuthクライアントは公開クライアントで、アプリに含まれるclient secretは取り出せるため秘密保持を前提にしません。認証は外部ブラウザ・PKCE・state・loopbackを使います。ユーザーのrefresh tokenやaccess tokenは絶対にアプリへ同梱しません。独自の認証中継サーバーは追加しません。
+
+明示的に保存済みのクライアントは共通設定より優先します。認証成功時のClient IDとclient secretをこのPCに保存し、別のクライアントを組み込んだ新版でも古いrefresh tokenを別Client IDで送信しないようにしています。
+
+配布前にGoogle Auth Platformの公開ステータス、ブランド確認、プライバシーポリシー等の要件を確認してください。`drive.file`は非機密スコープですが、公開準備が一切不要という意味ではありません。
 
 ## データと接続解除
 
@@ -65,3 +93,12 @@ Testingの外部向けOAuthアプリでdrive.fileを利用する場合、refresh
 - [Sheets API scopes](https://developers.google.com/workspace/sheets/api/scopes)
 - [Drive files.create](https://developers.google.com/workspace/drive/api/guides/create-file)
 - [OAuth token expiration](https://developers.google.com/identity/protocols/oauth2#expiration)
+
+## 件名だけの登録と2台のPC
+
+- スマホでは「タスク一覧」のB列（件名）だけ入力できる。締切が空欄なら「急ぎではない」（日付を持たない設定）、ステータスが空欄なら未着手になる。期限超過にはならない。
+- 両PCで同じGoogleアカウント・同じOAuth設定を組み込んだ新版を使う。初回に既存の同期シートを再発見する。複数候補がある場合は「接続の管理・同期先の変更」で同じシートを選ぶ。
+- 各PCで初回同期前に件数をプレビューし、「両方を残して同期」で開始。確認するまでは自動・手動どちらもタスク等を書き込まない。接続解除や同期先変更後も再確認する。
+- 異なるIDは同じ件名でも別タスクとして残す。同一IDで異なる内容は競合画面で選ぶ。同名分類は一意に対応づけられる場合に統合し、色・順序などの差は競合として確認する。
+- 確認中に内容が変更された場合は最新プレビューを再確認する。既に同期済みのこのPCは更新後も継続する。
+- 検証は2台分の独立した同期状態を使う自動テスト。別の実PC上でのOAuth・同時利用は別途確認が必要。

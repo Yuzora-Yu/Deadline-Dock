@@ -67,3 +67,23 @@ function Assert-ProjectRoot([string]$Root) {
         throw "package.json が見つかりません。解凍した deadline-dock フォルダ内から実行してください。`n想定: C:\Users\ship2\Documents\06-Yu-zora\deadline-dock"
     }
 }
+
+function Import-DeadlineDockGoogleOAuth {
+    # Explicit build environment wins; never combine values from different clients.
+    if ($env:DEADLINE_DOCK_GOOGLE_CLIENT_ID -or $env:DEADLINE_DOCK_GOOGLE_CLIENT_SECRET) {
+        if (-not $env:DEADLINE_DOCK_GOOGLE_CLIENT_ID -or -not $env:DEADLINE_DOCK_GOOGLE_CLIENT_SECRET) {
+            throw 'Set both DEADLINE_DOCK_GOOGLE_CLIENT_ID and DEADLINE_DOCK_GOOGLE_CLIENT_SECRET.'
+        }
+        return
+    }
+    $configPath = Join-Path (Get-DeadlineDockRoot) 'client_secret.desktop.json'
+    if (-not (Test-Path -LiteralPath $configPath)) { return }
+    try { $desktop = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).installed }
+    catch { throw 'Cannot read client_secret.desktop.json as Google Desktop OAuth JSON.' }
+    if (-not $desktop -or [string]::IsNullOrWhiteSpace($desktop.client_secret) -or
+        $desktop.client_id -notmatch '^[^\s]+\.apps\.googleusercontent\.com$') {
+        throw 'client_secret.desktop.json must contain a complete Desktop OAuth client.'
+    }
+    $env:DEADLINE_DOCK_GOOGLE_CLIENT_ID = $desktop.client_id
+    $env:DEADLINE_DOCK_GOOGLE_CLIENT_SECRET = $desktop.client_secret
+}

@@ -11,7 +11,6 @@ function ColorPicker({ value, onChange, label }: { value?: CategoryColor; onChan
   const current = value || DEFAULT_CATEGORY_COLOR;
   return <div className="category-color-picker" role="group" aria-label={label}>
     {CATEGORY_COLORS.map(color => <button key={color.value} type="button" className={`category-color-swatch ${current === color.value ? 'active' : ''}`} style={{ background: color.accent }} title={color.label} aria-label={color.label} onClick={() => onChange(color.value)} />)}
-    <GoogleSyncSettings />
   </div>;
 }
 
@@ -75,7 +74,7 @@ export function CategorySettings({ repo, categories, onChanged }: { repo: Reposi
   }
 
   return <div className="settings-page">
-    <div className="page-intro"><span className="eyebrow">SETTINGS</span><h2>設定</h2><p>分類、ローカルデータのバックアップなどを管理します。外部サービスへの送信は行いません。</p></div>
+    <div className="page-intro"><span className="eyebrow">SETTINGS</span><h2>設定</h2><p>分類、ローカルデータのバックアップ、任意のGoogle Sheets連携を管理します。Google連携を設定すると、同期対象のタスクをGoogleへ送信します。</p></div>
 
     <section className="settings-section">
       <div className="settings-section-head"><div><span className="eyebrow">CATEGORY</span><h3>分類設定</h3></div><p>タスク登録時に選べる分類を増減・並べ替えできます。色は一覧カードへ薄く反映されます。</p></div>

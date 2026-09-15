@@ -25,6 +25,7 @@ pub struct GoogleState {
 #[derive(Serialize)]
 pub struct Connection {
     client_id: String,
+    oauth_ready: bool,
     email: Option<String>,
     spreadsheet_url: Option<String>,
     enabled: bool,
@@ -34,10 +35,47 @@ pub struct Connection {
     poll_seconds: i64,
     last_success_at: Option<String>,
     last_error: Option<String>,
+    initial_sync_confirmed: bool,
 }
 fn secure_entry(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("DeadlineDock", name)
         .map_err(|_| "Windows資格情報にアクセスできません。".into())
+}
+// Desktop OAuth clients are public clients. These build-time values identify the
+// app; PKCE protects authorization. Never bundle user refresh/access tokens.
+fn bundled_client() -> Option<(&'static str, &'static str)> {
+    client_pair(
+        option_env!("DEADLINE_DOCK_GOOGLE_CLIENT_ID"),
+        option_env!("DEADLINE_DOCK_GOOGLE_CLIENT_SECRET"),
+    )
+}
+fn client_pair<'a>(id: Option<&'a str>, secret: Option<&'a str>) -> Option<(&'a str, &'a str)> {
+    let (id, secret) = (id?.trim(), secret?.trim());
+    (id.ends_with(".apps.googleusercontent.com")
+        && !id.contains(char::is_whitespace)
+        && !secret.is_empty())
+    .then_some((id, secret))
+}
+fn effective_client_id<'a>(saved: &'a str, bundled: Option<(&'a str, &'a str)>) -> &'a str {
+    if saved.is_empty() {
+        bundled.map_or("", |(id, _)| id)
+    } else {
+        saved
+    }
+}
+fn matching_bundled_secret<'a>(id: &str, bundled: Option<(&'a str, &'a str)>) -> Option<&'a str> {
+    bundled
+        .filter(|(bundled_id, _)| *bundled_id == id)
+        .map(|(_, secret)| secret)
+}
+fn oauth_secret(id: &str) -> Result<String, String> {
+    if let Ok(secret) = secure_entry(&format!("client:{id}"))?.get_password() {
+        if !secret.is_empty() {
+            return Ok(secret);
+        }
+    }
+    matching_bundled_secret(id, bundled_client()).map(str::to_owned)
+        .ok_or_else(|| "このビルドにはGoogle連携設定がありません。設定済みのアプリを利用するか、開発者向け設定を確認してください。".into())
 }
 pub(crate) fn random_secret() -> String {
     let mut bytes = [0u8; 32];
@@ -117,8 +155,13 @@ pub async fn google_status(app: tauri::AppHandle) -> Result<Connection, String> 
             .and_then(|e| e.get_password().map_err(|_| String::new()))
             .is_ok()
     });
+    let saved_id: String = row.get("client_id");
+    let id = effective_client_id(&saved_id, bundled_client()).to_string();
+    let oauth_ready = !id.is_empty() && oauth_secret(&id).is_ok();
     Ok(Connection {
-        client_id: row.get("client_id"),
+        client_id: id,
+        oauth_ready,
+        initial_sync_confirmed: row.get::<i64, _>("initial_sync_confirmed") != 0,
         email: row.get("email"),
         spreadsheet_url: row.get("spreadsheet_url"),
         enabled: row.get::<i64, _>("enabled") != 0,
@@ -271,10 +314,9 @@ pub async fn google_connect(
         .map_err(|_| "Google連携の処理中です。")?;
     let db = pool(&app).await?;
     let row = settings(&db).await?;
-    let id: String = row.get("client_id");
-    let secret = secure_entry(&format!("client:{id}"))?
-        .get_password()
-        .map_err(|_| "まずOAuthクライアント設定を保存してください。")?;
+    let saved_id: String = row.get("client_id");
+    let id = effective_client_id(&saved_id, bundled_client()).to_string();
+    let secret = oauth_secret(&id)?;
     let tokens = authorize(&app, &id, &secret).await?;
     let user = decode(
         client()?
@@ -290,10 +332,15 @@ pub async fn google_connect(
     if previous.as_deref().is_some_and(|old| old != sub) {
         return Err("別のGoogleアカウントです。先に連携解除してから接続してください。".into());
     }
+    // Pin the actual OAuth client with the token. A later build may use another
+    // client; never silently refresh an old token using the new client.
+    secure_entry(&format!("client:{id}"))?
+        .set_password(&secret)
+        .map_err(|_| "クライアント設定を安全に保存できません。")?;
     secure_entry(&format!("google:{sub}"))?
         .set_password(field(&tokens, "refresh_token")?)
         .map_err(|_| "認証情報を安全に保存できません。")?;
-    sqlx::query("UPDATE google_sync_settings SET google_sub=?,email=?,enabled=1,updated_at=datetime('now') WHERE workspace_id=?").bind(sub).bind(email).bind(WORKSPACE).execute(&db).await.map_err(|_| DB_ERROR)?;
+    sqlx::query("UPDATE google_sync_settings SET client_id=?,google_sub=?,email=?,enabled=1,updated_at=datetime('now') WHERE workspace_id=?").bind(&id).bind(sub).bind(email).bind(WORKSPACE).execute(&db).await.map_err(|_| DB_ERROR)?;
     // Persist account before creating the file so a failed network request is recoverable.
     prepare(&db).await?;
     google_status(app).await
@@ -306,9 +353,7 @@ pub(crate) async fn access_token(db: &SqlitePool) -> Result<String, String> {
     let refresh = secure_entry(&format!("google:{sub}"))?
         .get_password()
         .map_err(|_| "Google認証が必要です。再接続してください。")?;
-    let secret = secure_entry(&format!("client:{id}"))?
-        .get_password()
-        .map_err(|_| "OAuthクライアント設定を保存し直してください。")?;
+    let secret = oauth_secret(&id)?;
     let tokens = decode(
         client()?
             .post("https://oauth2.googleapis.com/token")
@@ -384,6 +429,43 @@ async fn prepare(db: &SqlitePool) -> Result<(), String> {
     initialize_sheet(&http, &token, &id).await?;
     sqlx::query("UPDATE google_sync_settings SET initialized=1,enabled=1,last_error=NULL,updated_at=datetime('now') WHERE workspace_id=?").bind(WORKSPACE).execute(db).await.map_err(|_| DB_ERROR)?;
     Ok(())
+}
+fn empty_default_sheet(sheet: &Value) -> bool {
+    let properties = &sheet["properties"];
+    if properties["sheetId"] != 0
+        || !matches!(properties["title"].as_str(), Some("Sheet1" | "シート1"))
+    {
+        return false;
+    }
+    for key in [
+        "merges",
+        "charts",
+        "bandedRanges",
+        "conditionalFormats",
+        "rowGroups",
+        "columnGroups",
+        "slicers",
+    ] {
+        if sheet[key].as_array().is_some_and(|v| !v.is_empty()) {
+            return false;
+        }
+    }
+    sheet["data"].as_array().into_iter().flatten().all(|g| {
+        g["rowData"].as_array().into_iter().flatten().all(|r| {
+            r["values"].as_array().into_iter().flatten().all(|c| {
+                [
+                    "userEnteredValue",
+                    "effectiveValue",
+                    "note",
+                    "textFormatRuns",
+                    "dataValidation",
+                    "userEnteredFormat",
+                ]
+                .iter()
+                .all(|key| c[*key].is_null())
+            })
+        })
+    })
 }
 async fn initialize_sheet(http: &Client, token: &str, id: &str) -> Result<(), String> {
     let endpoint = format!("https://sheets.googleapis.com/v4/spreadsheets/{id}");
@@ -522,6 +604,32 @@ async fn initialize_sheet(http: &Client, token: &str, id: &str) -> Result<(), St
             requests.push(json!({"setDataValidation":{"range":{"sheetId":sid,"startRowIndex":1,"startColumnIndex":3,"endColumnIndex":4},"rule":{"condition":{"type":"BOOLEAN"},"strict":true,"showCustomUi":true}}}));
         }
     }
+    // Only the untouched default tab is removable. Formula-empty cells and notes count as data.
+    if sheets.iter().any(|s| {
+        s["properties"]["sheetId"] == 0
+            && matches!(
+                s["properties"]["title"].as_str(),
+                Some("Sheet1" | "シート1")
+            )
+    }) {
+        let default = decode(
+            http.post(format!("{endpoint}:getByDataFilter"))
+                .bearer_auth(token)
+                .json(&json!({"dataFilters":[{"gridRange":{"sheetId":0}}],"includeGridData":true}))
+                .send()
+                .await,
+        )
+        .await?;
+        if default["sheets"]
+            .as_array()
+            .is_some_and(|s| s.len() == 1 && empty_default_sheet(&s[0]))
+        {
+            requests.push(json!({"deleteSheet":{"sheetId":0}}));
+        }
+    }
+    requests.push(
+        json!({"updateSheetProperties":{"properties":{"sheetId":100,"index":0},"fields":"index"}}),
+    );
     if !requests.is_empty() {
         decode(
             http.post(format!("{endpoint}:batchUpdate"))
@@ -573,7 +681,11 @@ pub async fn google_disconnect(
         }
     }
     let mut tx = db.begin().await.map_err(|_| DB_ERROR)?;
-    sqlx::query("UPDATE google_sync_settings SET google_sub=NULL,email=NULL,spreadsheet_id=NULL,spreadsheet_url=NULL,initialized=0,enabled=0,last_error=NULL,last_success_at=NULL WHERE workspace_id=?").bind(WORKSPACE).execute(&mut *tx).await.map_err(|_| DB_ERROR)?;
+    sqlx::query("UPDATE google_sync_settings SET initial_sync_confirmed=0,google_sub=NULL,email=NULL,spreadsheet_id=NULL,spreadsheet_url=NULL,initialized=0,enabled=0,last_error=NULL,last_success_at=NULL WHERE workspace_id=?").bind(WORKSPACE).execute(&mut *tx).await.map_err(|_| DB_ERROR)?;
+    sqlx::query("DELETE FROM related_sync_state")
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| DB_ERROR)?;
     sqlx::query("DELETE FROM sync_entity_state")
         .execute(&mut *tx)
         .await
@@ -588,6 +700,64 @@ pub async fn google_disconnect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_untouched_default_tab_is_removed() {
+        let empty = json!({"properties":{"sheetId":0,"title":"シート1"},"data":[{"rowData":[{"values":[{}]}]}]});
+        assert!(empty_default_sheet(&empty));
+        for cell in [
+            json!({"userEnteredValue":{"stringValue":"keep"}}),
+            json!({"userEnteredValue":{"formulaValue":"=\"\""}}),
+            json!({"note":"keep"}),
+            json!({"userEnteredFormat":{"backgroundColor":{"red":1}}}),
+        ] {
+            let mut used = empty.clone();
+            used["data"][0]["rowData"][0]["values"][0] = cell;
+            assert!(!empty_default_sheet(&used));
+        }
+        let mut renamed = empty.clone();
+        renamed["properties"]["title"] = json!("My notes");
+        assert!(!empty_default_sheet(&renamed));
+    }
+    #[test]
+    fn bundled_oauth_requires_a_complete_valid_pair() {
+        assert!(client_pair(None, Some("test-secret")).is_none());
+        assert!(client_pair(Some("app.apps.googleusercontent.com"), None).is_none());
+        assert!(client_pair(Some("app.apps.googleusercontent.com"), Some(" ")).is_none());
+        assert!(client_pair(Some("wrong-client"), Some("test-secret")).is_none());
+        assert!(client_pair(
+            Some("bad id.apps.googleusercontent.com"),
+            Some("test-secret")
+        )
+        .is_none());
+        assert_eq!(
+            client_pair(
+                Some(" app.apps.googleusercontent.com "),
+                Some(" test-secret ")
+            ),
+            Some(("app.apps.googleusercontent.com", "test-secret"))
+        );
+    }
+    #[test]
+    fn saved_oauth_client_stays_bound_across_build_updates() {
+        let bundled = Some(("new.apps.googleusercontent.com", "new-secret"));
+        assert_eq!(
+            effective_client_id("old.apps.googleusercontent.com", bundled),
+            "old.apps.googleusercontent.com"
+        );
+        assert_eq!(
+            effective_client_id("", bundled),
+            "new.apps.googleusercontent.com"
+        );
+        assert_eq!(effective_client_id("", None), "");
+        assert_eq!(
+            matching_bundled_secret("old.apps.googleusercontent.com", bundled),
+            None
+        );
+        assert_eq!(
+            matching_bundled_secret("new.apps.googleusercontent.com", bundled),
+            Some("new-secret")
+        );
+    }
     #[test]
     fn callback_security() {
         assert_eq!(
@@ -719,6 +889,17 @@ async fn attach_sheet(db: &SqlitePool, id: &str) -> Result<(), String> {
     let mut tx = db.begin().await.map_err(|_| DB_ERROR)?;
     sqlx::query("UPDATE google_sync_settings SET spreadsheet_id=?,spreadsheet_url=?,initialized=0,enabled=0 WHERE workspace_id=?").bind(id).bind(sheet_url(id)?).bind(WORKSPACE).execute(&mut *tx).await.map_err(|_|DB_ERROR)?;
     if previous.as_deref() != Some(id) {
+        sqlx::query(
+            "UPDATE google_sync_settings SET initial_sync_confirmed=0 WHERE workspace_id=?",
+        )
+        .bind(WORKSPACE)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| DB_ERROR)?;
+        sqlx::query("DELETE FROM related_sync_state")
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| DB_ERROR)?;
         sqlx::query("DELETE FROM sync_entity_state")
             .execute(&mut *tx)
             .await

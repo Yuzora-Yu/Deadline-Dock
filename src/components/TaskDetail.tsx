@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { Category, CheckItem, DeadlineInput, Resource, ResourceType, ScheduleEvent, TaskDetails, TaskStatus } from '../types';
 import type { Repository } from '../lib/repository';
 import { deadlineInputFromTask } from '../lib/deadline';
@@ -108,6 +108,8 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
   const [deadline, setDeadline] = useState<DeadlineInput>(() => deadlineInputFromTask(task));
   const [snooze, setSnooze] = useState(toLocalDateTimeInput(task.snooze_until));
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const previousTask = useRef(task);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [eventTitle, setEventTitle] = useState('');
   const [eventStart, setEventStart] = useState('');
@@ -126,18 +128,31 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
   const [editResourceValue, setEditResourceValue] = useState('');
 
   useEffect(() => {
-    setTitle(task.title); setDescription(task.description); setCategoryId(task.category_id || '');
-    setDeadline(deadlineInputFromTask(task)); setSnooze(toLocalDateTimeInput(task.snooze_until));
+    const previous=previousTask.current;
+    const changedTask=previous.id!==task.id;
+    setTitle(value=>changedTask || value===previous.title ? task.title : value);
+    setDescription(value=>changedTask || value===previous.description ? task.description : value);
+    setCategoryId(value=>changedTask || value===(previous.category_id || '') ? task.category_id || '' : value);
+    setDeadline(value=>changedTask || JSON.stringify(value)===JSON.stringify(deadlineInputFromTask(previous)) ? deadlineInputFromTask(task) : value);
+    setSnooze(value=>changedTask || value===toLocalDateTimeInput(previous.snooze_until) ? toLocalDateTimeInput(task.snooze_until) : value);
+    previousTask.current=task;
   }, [task.id, task.updated_at]);
 
   async function saveBase() {
     if (!title.trim()) return;
-    setSaving(true);
+    setSaving(true); setSaveError('');
     try {
       await repo.updateTaskFields(task.id, { title, description, categoryId: categoryId || null, snoozeUntil: snooze ? fromLocalDateTimeInput(snooze) : null });
       await repo.updateDeadline(task.id, deadline);
       await onChanged();
-    } finally { setSaving(false); }
+    } catch(e) {setSaveError(String(e));} finally { setSaving(false); }
+  }
+
+  async function saveDescription() {
+    if (description===task.description || saving) return;
+    setSaveError('');
+    try {await repo.updateTaskFields(task.id,{description}); await onChanged();}
+    catch(e){setSaveError(String(e));}
   }
 
   async function setStatus(status: TaskStatus) {
@@ -224,7 +239,8 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
         <label className="field"><span>分類</span><select value={categoryId} onChange={e => setCategoryId(e.target.value)}><option value="">未分類</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label className="field"><span>表示開始（任意）</span><input type="datetime-local" value={snooze} onChange={e => setSnooze(e.target.value)} /></label>
       </div>
-      <label className="field"><span>作業内容</span><textarea rows={5} placeholder="補足、手順、確認事項など" value={description} onChange={e => setDescription(e.target.value)} /></label>
+      <label className="field"><span>作業内容</span><textarea rows={5} placeholder="補足、手順、確認事項など" value={description} onChange={e => setDescription(e.target.value)} onBlur={()=>void saveDescription()} /><small className="field-help">{description!==task.description ? '編集中 · 入力欄を離れると保存します' : '保存済み · Google連携中は自動同期します'}</small></label>
+      {saveError && <p className="settings-message" role="alert">保存できませんでした：{saveError}</p>}
       <div className="task-checklist-block">
         <div className="section-title compact"><div><span className="eyebrow">CHECKLIST</span><h3>チェック項目</h3></div><span className="count-badge">{details.checkItems.filter(item => item.checked).length}/{details.checkItems.length}</span></div>
         <div className="task-check-list">{details.checkItems.map((item, index) => <CheckItemRow key={item.id} item={item} index={index} total={details.checkItems.length} repo={repo} onChanged={onChanged} />)}</div>

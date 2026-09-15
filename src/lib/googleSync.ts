@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { planTaskSync, type Acknowledgement, type ConflictInput, type IncomingTask, type LocalSyncData, type Patch, type RemoteSheet } from './googleSyncCore';
-export interface Connection { client_id: string; email: string | null; spreadsheet_url: string | null; enabled: boolean; initialized: boolean; credential_available: boolean; auto_sync: boolean; poll_seconds: number; last_success_at: string | null; last_error: string | null }
+export interface Connection { client_id: string; oauth_ready: boolean; email: string | null; spreadsheet_url: string | null; enabled: boolean; initialized: boolean; initial_sync_confirmed: boolean; credential_available: boolean; auto_sync: boolean; poll_seconds: number; last_success_at: string | null; last_error: string | null }
 export interface SyncTransport {
   local(): Promise<LocalSyncData>; read(): Promise<RemoteSheet>;
   write(remote: RemoteSheet, patches: Patch[]): Promise<void>;
@@ -34,6 +34,9 @@ export async function synchronizeTasks(transport: SyncTransport): Promise<SyncRe
   return {warnings:['新規行へのID設定を続行しています。次回同期で取り込みます。'],conflicts:0,changed:false,pending:1};
 }
 let busy=false;
+let queued=false;
+let queuedManual=false;
+let preparedUrl:string | null=null;
 let failures=0;
 let retryAt=0;
 let state: {busy:boolean; message:string; warnings:string[]}={busy:false,message:'未同期',warnings:[]};
@@ -43,24 +46,33 @@ export function subscribeSync(callback:()=>void) {subscribers.add(callback);retu
 function publish(next:typeof state) {state=next;subscribers.forEach(fn=>fn());}
 export function readableSyncError(error:unknown) {return String(error instanceof Error ? error.message : error).replace(/^[A-Z_]+\|/,'');}
 export async function syncNow(manual=true):Promise<void> {
-  if (!('__TAURI_INTERNALS__' in window) || busy || (!manual && Date.now()<retryAt)) return;
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  if (busy) { queued=true; queuedManual ||= manual; return; }
+  if (!manual && Date.now()<retryAt) return;
   busy=true;
   try {
     const connection=await invoke<Connection>('google_status');
     if (!connection.enabled || !connection.initialized || !connection.credential_available) {publish({busy:false,message:connection.email?'Google認証・接続が必要です':'Google未接続',warnings:[]});return;}
     if (!manual && !connection.auto_sync) return;
+    if (!connection.initial_sync_confirmed) {publish({busy:false,message:'初回同期の確認待ち',warnings:['設定のGoogle Sheets連携で、両方のタスクを確認して同期を開始してください。']});return;}
     publish({...state,busy:true,message:'同期中…'});
+    if (preparedUrl!==connection.spreadsheet_url) {await invoke('google_prepare_sheet');preparedUrl=connection.spreadsheet_url;}
+    const categories=await invoke<{warnings:string[];changed:boolean}>('google_sync_related',{entityType:'CATEGORY'});
     const result=await synchronizeTasks(desktopTransport);
-    const issues=[...result.warnings,...(result.conflicts ? [`${result.conflicts}件の競合があります。採用する内容を選んでください。`] : [])];
+    const checks=await invoke<{warnings:string[];changed:boolean}>('google_sync_related',{entityType:'CHECK_ITEM'});
+    const issues=[...categories.warnings,...result.warnings,...checks.warnings,...(result.conflicts ? [`${result.conflicts}件の競合があります。採用する内容を選んでください。`] : [])];
     const message=result.conflicts?'同期競合あり':issues.length?'同期警告あり':result.pending?`同期待ち ${result.pending}件`:'同期済み';
     await invoke('google_sync_report',{error:issues.length ? issues.join('\n').slice(0,10000) : result.pending ? message : null});
     failures=0;retryAt=0;publish({busy:false,message,warnings:issues});
-    if (result.changed) window.dispatchEvent(new Event('deadline-dock-sync-applied'));
+    if (result.changed || categories.changed || checks.changed) window.dispatchEvent(new Event('deadline-dock-sync-applied'));
   } catch(error) {
     failures++;retryAt=Date.now()+Math.min(300000,5000*2**Math.min(failures-1,6));
     const message=readableSyncError(error);publish({busy:false,message:'同期待ち・エラー',warnings:[message]});
     try {await invoke('google_sync_report',{error:message});} catch { /* Keep local task operations available. */ }
-  } finally {busy=false;if(state.busy)publish({...state,busy:false});}
+  } finally {
+    busy=false;if(state.busy)publish({...state,busy:false});
+    if (queued) {const manualNext=queuedManual;queued=false;queuedManual=false;void syncNow(manualNext);}
+  }
 }
 export function startGoogleSync():()=>void {
   if (!('__TAURI_INTERNALS__' in window)) return ()=>{};

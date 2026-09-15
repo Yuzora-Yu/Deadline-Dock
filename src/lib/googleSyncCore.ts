@@ -1,9 +1,9 @@
 import type { Category, DeadlineInput, Task, TaskStatus } from '../types';
-import { deadlineInputFromTask, parseDeadlineText } from './deadline';
+import { deadlineInputFromTask, parseDeadlineText, nonUrgentDeadline } from './deadline';
 
 export const TASK_HEADERS = ['task_id','件名','締切','ステータス','分類','作業内容','表示開始','延期回数','登録日','更新日','完了日','revision','deleted_at'];
 export interface SyncState { entity_id: string; last_synced_local_revision: number; last_synced_remote_hash: string }
-export interface SyncConflict { id: string; entity_id: string; local_json: string; remote_json: string; resolution: 'LOCAL' | 'REMOTE' | null }
+export interface SyncConflict { id: string; entity_type?: 'TASK' | 'CATEGORY' | 'CHECK_ITEM'; entity_id: string; local_json: string; remote_json: string; resolution: 'LOCAL' | 'REMOTE' | null }
 export interface LocalSyncData { tasks: Task[]; categories: Category[]; states: SyncState[]; conflicts: SyncConflict[] }
 export interface RemoteSheet { spreadsheet_id: string; version: string; rows: string[][]; grid_rows: number }
 export interface Patch { row_index: number; values: string[] }
@@ -28,6 +28,7 @@ function localDate(raw: string, withTime = false) {
 }
 export function deadlineCell(task: Pick<Task,'deadline_type'|'deadline_exact'|'deadline_range_start'|'deadline_range_end'>) {
   if (task.deadline_type === 'ASAP') return 'ASAP';
+  if (task.deadline_type === 'FUZZY_RANGE' && !task.deadline_range_start && !task.deadline_range_end) return '急ぎではない';
   if (task.deadline_type === 'FUZZY_RANGE') return `${localDate(task.deadline_range_start!)} ～ ${localDate(task.deadline_range_end!)}`;
   const d = new Date(task.deadline_exact!);
   return localDate(task.deadline_exact!, !(d.getHours() === 23 && d.getMinutes() === 59));
@@ -38,10 +39,12 @@ export function taskRow(task: Task, categories: Category[]): string[] {
     task.snooze_until ? localDate(task.snooze_until,true) : '',String(task.postponement_count),task.created_at,task.updated_at,task.completed_at || '',String(task.revision),task.deleted_at || '',JSON.stringify(deadlineInputFromTask(task))];
 }
 function validDeadline(d: DeadlineInput): boolean {
+  if (d?.type==='FUZZY_RANGE' && d.label==='急ぎではない' && !d.exact && !d.rangeStart && !d.rangeEnd) return true;
   const date = (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) && Number.isFinite(Date.parse(v));
   return typeof d?.label === 'string' && (d.type === 'ASAP' || (d.type === 'EXACT' && date(d.exact)) || (d.type === 'FUZZY_RANGE' && date(d.rangeStart) && date(d.rangeEnd) && Date.parse(d.rangeStart!) <= Date.parse(d.rangeEnd!)));
 }
 export function parseSheetDeadline(text: string, now = new Date()): DeadlineInput | null {
+  if (!text.trim()) return nonUrgentDeadline();
   const range = text.match(/^(\d{4}\/\d{1,2}\/\d{1,2})\s*～\s*(\d{4}\/\d{1,2}\/\d{1,2})$/);
   if (range) {
     const a = parseDeadlineText(range[1],now); const b = parseDeadlineText(range[2],now);
@@ -89,7 +92,7 @@ export async function planTaskSync(local: LocalSyncData, remote: RemoteSheet, no
   const plan: SyncPlan = {identify:[],push:[],pull:[],acknowledge:[],pushed:[],conflicts:[],warnings:[]};
   const tasks = new Map(local.tasks.map(t=>[t.id,t]));
   const states = new Map(local.states.map(s=>[s.entity_id,s]));
-  const resolutions = new Map(local.conflicts.map(c=>[c.entity_id,c]));
+  const resolutions = new Map(local.conflicts.filter(c=>!c.entity_type || c.entity_type==='TASK').map(c=>[c.entity_id,c]));
   const occurrences = new Map<string,number[]>();
   remote.rows.slice(1).forEach((r,i)=>{ if (r[0]) occurrences.set(r[0],[...(occurrences.get(r[0]) ?? []),i+1]); });
   const blocked = new Set<string>();
@@ -101,7 +104,12 @@ export async function planTaskSync(local: LocalSyncData, remote: RemoteSheet, no
     if (blocked.has(id)) continue;
     if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { plan.warnings.push(`行 ${index+1}: task_id が不正です。`); continue; }
     try {
-      if (!id) { incomingTask(row,undefined,now); plan.identify.push({row_index:index,values:[crypto.randomUUID()]}); continue; }
+      if (!id) {
+        incomingTask(row,undefined,now);
+        if (!row[2].trim()) {row[0]=crypto.randomUUID();row[2]='急ぎではない';row[13]=JSON.stringify(nonUrgentDeadline());plan.identify.push({row_index:index,values:row});}
+        else plan.identify.push({row_index:index,values:[crypto.randomUUID()]});
+        continue;
+      }
       if (row[12] && !task) { plan.warnings.push(`行 ${index+1}: 削除済みタスク ${id} の取込を保留しました。`); continue; }
       const hash=await rowHash(row);
       const localRow=task ? taskRow(task,local.categories) : null;

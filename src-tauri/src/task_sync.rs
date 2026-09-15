@@ -58,8 +58,8 @@ pub async fn google_local_sync_data(app: tauri::AppHandle) -> Result<Value, Stri
     let conflicts = rows_json(
         &db,
         "sync_conflicts",
-        "id,entity_id,local_json,remote_json,resolution",
-        "WHERE entity_type='TASK' AND resolved_at IS NULL",
+        "id,entity_type,entity_id,local_json,remote_json,resolution",
+        "WHERE resolved_at IS NULL",
     )
     .await?;
     Ok(json!({"tasks":tasks,"categories":categories,"states":states,"conflicts":conflicts}))
@@ -74,7 +74,7 @@ fn api_error(code: u16) -> String {
         _ => "API_ERROR|Googleとの通信に失敗しました。シート構成を確認してください。",
     }.into()
 }
-async fn request_json(request: RequestBuilder, retry: bool) -> Result<Value, String> {
+pub(crate) async fn request_json(request: RequestBuilder, retry: bool) -> Result<Value, String> {
     for attempt in 0..3 {
         let response = request
             .try_clone()
@@ -108,7 +108,7 @@ async fn request_json(request: RequestBuilder, retry: bool) -> Result<Value, Str
     }
     Err("RETRY|しばらく待って再試行してください。".into())
 }
-async fn connected_id(db: &SqlitePool) -> Result<String, String> {
+pub(crate) async fn connected_id(db: &SqlitePool) -> Result<String, String> {
     let settings = google::settings(db).await?;
     if settings.get::<i64, _>("enabled") == 0 || settings.get::<i64, _>("initialized") == 0 {
         return Err("NOT_CONNECTED|Google連携を完了してください。".into());
@@ -121,9 +121,9 @@ async fn connected_id(db: &SqlitePool) -> Result<String, String> {
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RemoteSheet {
-    spreadsheet_id: String,
-    version: String,
-    rows: Vec<Vec<String>>,
+    pub(crate) spreadsheet_id: String,
+    pub(crate) version: String,
+    pub(crate) rows: Vec<Vec<String>>,
     grid_rows: i64,
 }
 fn snapshot_from_json(id: &str, metadata: Value) -> Result<RemoteSheet, String> {
@@ -172,7 +172,7 @@ fn snapshot_from_json(id: &str, metadata: Value) -> Result<RemoteSheet, String> 
             .unwrap_or(1000),
     })
 }
-async fn read_sheet(id: &str, token: &str) -> Result<RemoteSheet, String> {
+pub(crate) async fn read_sheet(id: &str, token: &str) -> Result<RemoteSheet, String> {
     let meta=request_json(google::client()?.post(format!("https://sheets.googleapis.com/v4/spreadsheets/{id}:getByDataFilter"))
         .bearer_auth(token).json(&json!({"dataFilters":[{"gridRange":{"sheetId":100,"startColumnIndex":0,"endColumnIndex":14}}],"includeGridData":true})),true).await?;
     snapshot_from_json(id, meta)
@@ -255,6 +255,7 @@ pub async fn google_write_tasks(
         .try_lock()
         .map_err(|_| "BUSY|Google連携の処理中です。")?;
     let db = google::pool(&app).await?;
+    crate::sync_onboarding::require_confirmation(&db).await?;
     let id = connected_id(&db).await?;
     if id != spreadsheet_id {
         return Err("同期先が変更されました。再試行してください。".into());
@@ -343,15 +344,19 @@ fn valid_input(t: &IncomingTask) -> bool {
             "ASAP" => true,
             "EXACT" => t.deadline.exact.as_deref().is_some_and(iso),
             "FUZZY_RANGE" => {
-                t.deadline.range_start.as_deref().is_some_and(iso)
-                    && t.deadline.range_end.as_deref().is_some_and(iso)
-                    && match (&t.deadline.range_start, &t.deadline.range_end) {
-                        (Some(a), Some(b)) => {
-                            DateTime::parse_from_rfc3339(a).ok()
-                                <= DateTime::parse_from_rfc3339(b).ok()
-                        }
-                        _ => false,
-                    }
+                (t.deadline.label == "急ぎではない"
+                    && t.deadline.exact.is_none()
+                    && t.deadline.range_start.is_none()
+                    && t.deadline.range_end.is_none())
+                    || (t.deadline.range_start.as_deref().is_some_and(iso)
+                        && t.deadline.range_end.as_deref().is_some_and(iso)
+                        && match (&t.deadline.range_start, &t.deadline.range_end) {
+                            (Some(a), Some(b)) => {
+                                DateTime::parse_from_rfc3339(a).ok()
+                                    <= DateTime::parse_from_rfc3339(b).ok()
+                            }
+                            _ => false,
+                        })
             }
             _ => false,
         }
@@ -559,6 +564,7 @@ pub async fn google_apply_tasks(
         .try_lock()
         .map_err(|_| "BUSY|Google連携の処理中です。")?;
     let db = google::pool(&app).await?;
+    crate::sync_onboarding::require_confirmation(&db).await?;
     if connected_id(&db).await? != spreadsheet_id {
         return Err("同期先が変更されました。".into());
     }
@@ -599,6 +605,7 @@ pub async fn google_acknowledge(
         .try_lock()
         .map_err(|_| "BUSY|Google連携の処理中です。")?;
     let db = google::pool(&app).await?;
+    crate::sync_onboarding::require_confirmation(&db).await?;
     if connected_id(&db).await? != spreadsheet_id {
         return Err("同期先が変更されました。".into());
     }
@@ -627,6 +634,7 @@ pub async fn google_conflicts(
         .try_lock()
         .map_err(|_| "BUSY|Google連携の処理中です。")?;
     let db = google::pool(&app).await?;
+    crate::sync_onboarding::require_confirmation(&db).await?;
     if connected_id(&db).await? != spreadsheet_id {
         return Err("同期先が変更されました。".into());
     }
@@ -688,6 +696,16 @@ pub async fn google_sync_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn non_urgent_has_no_artificial_due_date() {
+        let mut t = incoming();
+        t.deadline.kind = "FUZZY_RANGE".into();
+        t.deadline.label = "急ぎではない".into();
+        t.deadline.exact = None;
+        assert!(valid_input(&t));
+        t.deadline.label = "broken".into();
+        assert!(!valid_input(&t));
+    }
     fn incoming() -> IncomingTask {
         IncomingTask {
             id: "11111111-1111-4111-8111-111111111111".into(),

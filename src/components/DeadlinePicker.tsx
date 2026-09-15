@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { DeadlineInput } from '../types';
 import {
-  asapDeadline, dayAfterTomorrowDeadline, endOfThisMonthDeadline, exactDeadlineFromDate, exactDeadlineFromDateTime,
+  asapDeadline, nonUrgentDeadline, dayAfterTomorrowDeadline, endOfThisMonthDeadline, exactDeadlineFromDate, exactDeadlineFromDateTime,
   monthSegmentDeadline, nextMonthDeadline, nextWeekDeadline, thisMonthDeadline, thisWeekDeadline, todayDeadline, tomorrowDeadline
 } from '../lib/deadline';
 import { toLocalDateInput, toLocalDateTimeInput } from '../lib/datetime';
@@ -31,7 +31,8 @@ export function DeadlinePicker({ value, onChange, compact = false, presetsOnly =
     { deadline: tomorrowDeadline() },
     { deadline: dayAfterTomorrowDeadline() },
     { deadline: endOfThisMonthDeadline() },
-    { deadline: asapDeadline() }
+    { deadline: asapDeadline() },
+    { deadline: nonUrgentDeadline() }
   ];
   const rangePresets = [thisWeekDeadline(), nextWeekDeadline(), thisMonthDeadline(), nextMonthDeadline()];
 

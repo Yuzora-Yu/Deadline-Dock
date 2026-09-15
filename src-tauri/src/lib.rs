@@ -1,4 +1,6 @@
 mod google;
+mod related_sync;
+mod sync_onboarding;
 mod task_sync;
 use tauri::{
     menu::{Menu, MenuItem},
@@ -73,6 +75,18 @@ pub fn run() {
             sql: include_str!("../migrations/0007_task_sync.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "related_sync",
+            sql: include_str!("../migrations/0008_related_sync.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "sync_confirmation",
+            sql: include_str!("../migrations/0009_sync_confirmation.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -89,6 +103,9 @@ pub fn run() {
             google::google_select_sheet,
             google::google_new_sheet,
             task_sync::google_local_sync_data,
+            related_sync::google_sync_related,
+            sync_onboarding::google_preview_merge,
+            sync_onboarding::google_confirm_merge,
             task_sync::google_read_tasks,
             task_sync::google_write_tasks,
             task_sync::google_apply_tasks,

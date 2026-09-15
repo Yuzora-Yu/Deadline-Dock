@@ -108,6 +108,11 @@ export function asapDeadline(): DeadlineInput {
   return { type: 'ASAP', label: 'できるだけ早く' };
 }
 
+// An open-ended fuzzy deadline: no invented due date and no overdue alert.
+export function nonUrgentDeadline(): DeadlineInput {
+  return { type: 'FUZZY_RANGE', label: '急ぎではない', exact: null, rangeStart: null, rangeEnd: null };
+}
+
 export function deadlineInputFromTask(task: Task): DeadlineInput {
   return {
     type: task.deadline_type,
@@ -212,6 +217,7 @@ export function parseDeadlineText(raw: string, base = new Date()): DeadlineInput
   if (['今月', '今月中'].includes(normalized)) return thisMonthDeadline(base);
   if (['来月', '来月中'].includes(normalized)) return nextMonthDeadline(base);
   if (['asap', 'できるだけ早く', 'なるべく早く', 'なる早'].includes(normalized)) return asapDeadline();
+  if (['急ぎではない', '急がない', '未定', 'いつか'].includes(normalized)) return nonUrgentDeadline();
 
   const relativeSegment = normalized.match(/^(今月|来月)(上旬|中旬|下旬)$/);
   if (relativeSegment) {

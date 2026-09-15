@@ -489,6 +489,8 @@ export class SqliteRepository implements Repository {
     const db = await this.db();
     // Restored revisions can equal old revisions with different contents. Require an explicit reconnect.
     await db.execute('UPDATE google_sync_settings SET enabled=0,auto_sync=0');
+    await db.execute('UPDATE google_sync_settings SET initial_sync_confirmed=0');
+    await db.execute('DELETE FROM related_sync_state');
     await db.execute('DELETE FROM sync_entity_state');
     const safety = await this.exportSnapshot();
     try {

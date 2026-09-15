@@ -6,6 +6,7 @@ Set-Location $root
 Refresh-DeadlineDockPath
 
 try {
+    Import-DeadlineDockGoogleOAuth
     Write-Host 'Deadline Dock のWindows版をビルドします。' -ForegroundColor Green
     if (-not (Test-SupportedNode) -or -not (Test-CommandExists 'cargo.exe') -or -not (Test-VcBuildTools)) {
         throw 'ビルド環境が不足しています。先に 01_初回セットアップ.cmd を実行してください。'
