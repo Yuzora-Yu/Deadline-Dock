@@ -6,6 +6,11 @@ const assets = (await fs.readdir(path.join(root, "assets")))
   .filter((n) => /\.(js|css)$/.test(n))
   .map((n) => "assets/" + n);
 const files = ["index.html", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "manifest.webmanifest", ...assets];
+// Stable artifacts on Windows and Linux, before hashing/caching/exporting.
+for (const file of files.filter(file => !file.endsWith('.png'))) {
+  const filename = path.join(root, file);
+  await fs.writeFile(filename, (await fs.readFile(filename, 'utf8')).replace(/\r\n/g, '\n'));
+}
 const version = createHash("sha256")
   .update(Buffer.concat(await Promise.all(files.map(f => fs.readFile(path.join(root, f))))))
   .digest("hex")
