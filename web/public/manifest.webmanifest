@@ -1,1 +1,33 @@
-{"name":"Deadline Dock","short_name":"Deadline Dock","lang":"ja","start_url":"/tools/deadline-dock/","scope":"/tools/deadline-dock/","display":"standalone","background_color":"#f5f5ef","theme_color":"#303f35","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{
+  "name": "Deadline Dock",
+  "short_name": "Deadline Dock",
+  "lang": "ja",
+  "start_url": "/tools/deadline-dock/",
+  "scope": "/tools/deadline-dock/",
+  "display": "standalone",
+  "background_color": "#f5f5ef",
+  "theme_color": "#303f35",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "id": "/tools/deadline-dock/",
+  "description": "締切から仕事を見る。スマホで登録し、Google SheetsでPCと連携。",
+  "shortcuts": [
+    {
+      "name": "タスクを登録",
+      "short_name": "新規タスク",
+      "url": "/tools/deadline-dock/?action=new"
+    }
+  ]
+}

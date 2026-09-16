@@ -25,7 +25,7 @@ const names = await inventory(source);
 if (
   names.some(
     (n) =>
-      !/^(index\.html|icon\.svg|manifest\.webmanifest|sw\.js|assets\/[\w-]+\.(js|css))$/.test(
+      !/^(index\.html|icon\.svg|icon-(192|512)\.png|apple-touch-icon\.png|manifest\.webmanifest|sw\.js|assets\/[\w-]+\.(js|css))$/.test(
         n,
       ),
   )
@@ -41,7 +41,7 @@ const previous = await fs
 if (previous) {
   for (const name of Object.keys(previous.files)) {
     if (
-      !/^(index\.html|icon\.svg|manifest\.webmanifest|sw\.js|assets\/[\w-]+\.(js|css))$/.test(
+      !/^(index\.html|icon\.svg|icon-(192|512)\.png|apple-touch-icon\.png|manifest\.webmanifest|sw\.js|assets\/[\w-]+\.(js|css))$/.test(
         name,
       )
     )

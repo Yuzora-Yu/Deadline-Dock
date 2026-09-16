@@ -60,3 +60,5 @@ bootstrap().catch(err => {
   console.error(err);
   document.getElementById('root')!.innerHTML = `<div style="font-family:sans-serif;padding:24px"><h2>起動に失敗しました</h2><pre>${String(err)}</pre></div>`;
 });
+
+import './refined.css';

@@ -618,3 +618,17 @@ details input {
     animation: none;
   }
 }
+
+.new-task-button { width: 100%; margin-bottom: 12px; min-height: 48px; font-size: 15px; }
+.install-heading { display: flex; align-items: center; gap: 14px; }
+.install-heading img, .brand img { border-radius: 12px; }
+.install-heading h2 { margin: 0; }
+.install-heading p { margin: 5px 0 0; }
+.install-guide { display: grid; gap: 2px; }
+.install-card > button { width: 100%; margin-top: 18px; }
+.discard-prompt { padding: 14px 20px; background: #fff5dd; border-bottom: 1px solid #e4d4ab; }
+.discard-prompt button { margin: 4px 8px 0 0; }
+[hidden] { display: none !important; }
+.editor input, .editor select, .editor textarea { min-width: 0; max-width: 100%; }
+
+.install-link { display: block; margin: 12px auto 18px; padding: 6px 12px; background: transparent; border: 0; font-size: 12px; color: #52644b; }

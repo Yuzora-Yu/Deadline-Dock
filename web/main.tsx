@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   addTask,
@@ -37,6 +37,8 @@ import {
 } from "../src/lib/deadline";
 import type { Task, TaskStatus } from "../src/types";
 import "./style.css";
+import { InstallCard } from "./InstallCard";
+import { toLocalDateTimeInput, fromLocalDateTimeInput } from "../src/lib/datetime";
 
 const statusLabel = {
   TODO: "未着手",
@@ -53,6 +55,8 @@ function App() {
   const [title, setTitle] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Task>();
+  const [creating, setCreating] = useState(false);
+  const newDraft = useMemo(() => { const d = emptyData(); const t = addTask(d, title || '新しいタスク'); t.title = title; return t; }, [creating]);
   const [undo, setUndo] = useState("");
   const [googleReady, setGoogleReady] = useState(false);
   const [auth, setAuth] = useState(false);
@@ -67,7 +71,7 @@ function App() {
   const [filter, setFilter] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const editing = useRef(false);
-  editing.current = !!selected;
+  editing.current = !!selected || creating;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const syncing = useRef(false);
   const channel = useRef<BroadcastChannel | undefined>(undefined);
@@ -103,6 +107,8 @@ function App() {
   };
   const runSync = async (repair = false) => {
     if (!db || syncing.current || editing.current) return;
+    syncing.current = true;
+    try {
     const current = await readData(db);
     if (!current.sheetId) return;
     if (!connected()) {
@@ -110,12 +116,14 @@ function App() {
       setMessage("端末に保存済み · Googleへ再接続すると同期します");
       return;
     }
-    syncing.current = true;
     setBusy(true);
     setError("");
     setMessage("同期中…");
-    try {
-      const operation = () => sync(db, new Sheets(current.sheetId), repair);
+      const operation = async () => {
+        const latest = await readData(db);
+        if (latest.sheetId !== current.sheetId || latest.account !== current.account) throw new Error('別の画面で接続先が変わりました。設定を確認してください。');
+        return sync(db, new Sheets(current.sheetId), repair);
+      };
       const result = await navigator.locks.request(
         "deadline-dock-sync",
         operation,
@@ -158,13 +166,13 @@ function App() {
     if (!db) return;
     // React may finish closing the editor after the zero-delay deletion timer.
     // Retry once after that commit, rather than waiting for the periodic poll.
-    if (!selected && connected()) void runSync();
+    if (!selected && !creating && connected()) void runSync();
     const interval = setInterval(() => {
-      if (document.visibilityState === "visible" && !selected && connected())
+      if (document.visibilityState === "visible" && !selected && !creating && connected())
         void runSync();
     }, 60000);
     return () => clearInterval(interval);
-  }, [db, selected]);
+  }, [db, selected, creating]);
   useEffect(() => {
     if (page === "settings")
       loadGoogle()
@@ -203,6 +211,11 @@ function App() {
     } catch (e) {
       setPage("settings");
       report(e);
+    }
+  }, [db]);
+  useEffect(() => {
+    if (db && new URLSearchParams(location.search).get("action") === "new") {
+      setCreating(true); const url = new URL(location.href); url.searchParams.delete("action"); history.replaceState(null, "", url);
     }
   }, [db]);
   const connect = () => {
@@ -291,7 +304,7 @@ function App() {
     <>
       <header>
         <a className="brand" href="./">
-          <img src="./icon.svg" width="40" height="40" alt="" />
+          <img src="./icon-192.png" width="40" height="40" alt="" />
           <span>
             Deadline Dock<small>思いついたら、ここに。</small>
           </span>
@@ -328,6 +341,8 @@ function App() {
               </p>
             </section>
             {page === "tasks" && (
+              <>
+              <button className="new-task-button primary" disabled={!db || busy} onClick={() => setCreating(true)}>＋ タスクを詳しく登録</button>
               <form
                 className="quick"
                 onSubmit={async (e) => {
@@ -363,6 +378,8 @@ function App() {
                   締切は「急ぎではない」で登録。あとから編集できます。
                 </small>
               </form>
+              <button className="install-link" onClick={() => { setPage("settings"); requestAnimationFrame(() => document.getElementById("install-app")?.scrollIntoView({block:"start"})); }}>ホーム画面に追加する ↗</button>
+              </>
             )}
             <div className="filters">
               <input
@@ -741,6 +758,7 @@ function App() {
             </p>
           </>
         )}
+        <div id="install-app" hidden={page !== "settings"}><InstallCard /></div>
       </main>
       <nav aria-label="メインメニュー">
         {(["tasks", "done", "settings"] as const).map((p, i) => (
@@ -755,20 +773,29 @@ function App() {
           </button>
         ))}
       </nav>
-      {selected && (
+      {(selected || creating) && (
         <Editor
-          task={selected}
+          key={selected?.id ?? "new"}
+          isNew={creating}
+          task={selected ?? newDraft}
           data={data}
           busy={busy}
-          onClose={() => setSelected(undefined)}
+          onClose={() => { setSelected(undefined); setCreating(false); }}
           onSave={async (t, checkEdits, revision) => {
             await save((d) => {
-              if (d.revision !== revision)
+              if (!creating && d.revision !== revision)
                 throw new Error(
                   "別の画面で更新されました。一度閉じて最新の内容を確認してください。",
                 );
+              if (creating) {
+                if (t.category_id && !d.categories.some(c => c.id === t.category_id && !c.deleted_at)) throw new Error("分類が変更されています。分類を選び直してください。");
+                const now = new Date().toISOString();
+                d.tasks.push({ ...t, created_at: now, updated_at: now, revision: 1 });
+                d.checks.push(...checkEdits);
+                return;
+              }
               const current = d.tasks.find((x) => x.id === t.id);
-              if (current?.revision !== selected.revision)
+              if (current?.revision !== selected?.revision)
                 throw new Error(
                   "別の画面で更新されました。一度閉じて最新の内容を確認してください。",
                 );
@@ -781,8 +808,10 @@ function App() {
               }
             });
             setSelected(undefined);
+            if (creating) { setCreating(false); setTitle(""); }
           }}
           onDelete={async () => {
+            if (!selected) return;
             await save((d) => removeTask(d, selected.id), true);
             setUndo(selected.id);
             setSelected(undefined);
@@ -822,6 +851,7 @@ function App() {
   );
 }
 function Editor({
+  isNew = false,
   task,
   data,
   busy,
@@ -829,6 +859,7 @@ function Editor({
   onSave,
   onDelete,
 }: {
+  isNew?: boolean;
   task: Task;
   data: Data;
   busy: boolean;
@@ -844,6 +875,23 @@ function Editor({
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const initial = useRef(JSON.stringify({task, checks: data.checks.filter(c => c.task_id === task.id)}));
+  const dirty = initial.current !== JSON.stringify({task: draft, checks}) || !!text.trim();
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; before?.focus(); };
+  }, []);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => { if (dirty) {e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+  const close = () => dirty ? setConfirmDiscard(true) : onClose();
   const [saving, setSaving] = useState(false);
   const action = async (fn: () => Promise<void>) => {
     setSaving(true);
@@ -858,16 +906,25 @@ function Editor({
   return (
     <div className="overlay">
       <section
+        ref={dialogRef}
+        onKeyDown={e => {
+          if (e.key === 'Escape' && !saving) { e.preventDefault(); close(); }
+          if (e.key !== 'Tab') return;
+          const items = [...(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') ?? [])].filter(el => el.getClientRects().length);
+          const first = items[0], last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+        }}
         className="editor"
         role="dialog"
         aria-modal="true"
-        aria-label="タスクを編集"
+        aria-label={isNew ? "タスクを登録" : "タスクを編集"}
       >
         <div className="editor-head">
-          <button onClick={onClose} disabled={saving}>
+          <button onClick={close} disabled={saving}>
             閉じる
           </button>
-          <strong>タスクの詳細</strong>
+          <strong>{isNew ? "新しいタスク" : "タスクの詳細"}</strong>
           <button
             className="primary"
             disabled={saving || busy || !draft.title.trim()}
@@ -875,15 +932,16 @@ function Editor({
               void action(() =>
                 onSave(
                   { ...draft, title: draft.title.trim() },
-                  checks,
+                  text.trim() ? [...checks, { id: crypto.randomUUID(), task_id: draft.id, text: text.trim(), checked: 0, sort_order: checks.length, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }] : checks,
                   sourceRevision,
                 ),
               )
             }
           >
-            保存
+            {isNew ? "登録する" : "保存"}
           </button>
         </div>
+        {confirmDiscard && <div className="discard-prompt" role="alert"><p>入力した内容を破棄して閉じますか？</p><button onClick={() => setConfirmDiscard(false)}>入力を続ける</button><button className="danger" onClick={onClose}>破棄して閉じる</button></div>}
         <fieldset disabled={busy || saving}>
           <label>
             件名
@@ -980,6 +1038,7 @@ function Editor({
                 ))}
             </select>
           </label>
+          <label>表示開始（任意）<input type="datetime-local" value={toLocalDateTimeInput(draft.snooze_until)} onChange={e => setDraft({ ...draft, snooze_until: e.target.value ? fromLocalDateTimeInput(e.target.value) : null })} /></label>
           <label>
             作業内容
             <textarea
@@ -1052,7 +1111,7 @@ function Editor({
                   ...checks,
                   {
                     id: crypto.randomUUID(),
-                    task_id: task.id,
+                    task_id: draft.id,
                     text: text.trim(),
                     checked: 0,
                     sort_order: checks.length,
@@ -1066,7 +1125,7 @@ function Editor({
               追加
             </button>
           </div>
-          <div className="delete-area">
+          {!isNew && <div className="delete-area">
             {confirmDelete ? (
               <>
                 <p>
@@ -1087,7 +1146,7 @@ function Editor({
                 タスクを削除
               </button>
             )}
-          </div>
+          </div>}
         </fieldset>
         {error && (
           <p role="alert" className="error">

@@ -2,7 +2,7 @@
 
 締切を中心に仕事を管理する、ローカル完結型のWindowsデスクトップタスク管理アプリです。
 
-Current release: **v0.1.13**
+Current release: **v0.1.14**
 
 スマホ向けの[ブラウザ版](https://yu-zora.com/tools/deadline-dock/)も利用できます。開発・配信手順は [WEB_APP.md](docs/WEB_APP.md)、Windowsの更新は [APP_UPDATES.md](docs/APP_UPDATES.md) を参照してください。
 

@@ -5,9 +5,9 @@ const root = path.resolve("dist-web");
 const assets = (await fs.readdir(path.join(root, "assets")))
   .filter((n) => /\.(js|css)$/.test(n))
   .map((n) => "assets/" + n);
-const files = ["index.html", "icon.svg", "manifest.webmanifest", ...assets];
+const files = ["index.html", "icon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "manifest.webmanifest", ...assets];
 const version = createHash("sha256")
-  .update(await fs.readFile(path.join(root, "index.html")))
+  .update(Buffer.concat(await Promise.all(files.map(f => fs.readFile(path.join(root, f))))))
   .digest("hex")
   .slice(0, 16);
 const script = `const CACHE='deadline-dock-web-${version}';

@@ -1,3 +1,4 @@
+import brandIcon from "../../assets/branding/deadline-dock-oauth-120.png";
 import { useEffect, useState, type CSSProperties } from 'react';
 import type { Task } from '../types';
 import type { Repository } from '../lib/repository';
@@ -42,7 +43,7 @@ export function MiniApp({ repo }: { repo: Repository }) {
   }
 
   return <div className="mini-shell">
-    <header className="mini-header"><strong>Deadline Dock</strong><div><button className="mini-action" onClick={() => { void addTask(); }} title="タスクを登録">＋</button><button className={`mini-action ${pinned ? 'active' : ''}`} onClick={togglePin} title="常に手前に表示">◆</button></div></header>
+    <header className="mini-header"><strong className="mini-brand"><img src={brandIcon} alt="" />Deadline Dock</strong><div><button className="mini-action" onClick={() => { void addTask(); }} title="タスクを登録">＋</button><button className={`mini-action ${pinned ? 'active' : ''}`} onClick={togglePin} title="常に手前に表示">◆</button></div></header>
     <div className="mini-list">
       {tasks.map(t => {
         const u = getUrgency(t);

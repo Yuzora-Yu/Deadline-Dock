@@ -1,6 +1,7 @@
+import brandIcon from "../assets/branding/deadline-dock-oauth-120.png";
 import { SyncStatusBadge } from './components/SyncStatusBadge';
 import { startGoogleSync } from './lib/googleSync';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Category, DeadlineType, Task, TaskComposerInitial, TaskDetails, TaskFilters, TaskStatus } from './types';
 import type { Repository } from './lib/repository';
 import { compareUrgency, deadlineInputFromTask } from './lib/deadline';
@@ -34,6 +35,9 @@ export function App({ repo }: { repo: Repository }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selection = useRef(selectedId);
+  selection.current = selectedId;
+  const detailRequest = useRef(0);
   const [details, setDetails] = useState<TaskDetails | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [composerInitial, setComposerInitial] = useState<TaskComposerInitial | undefined>(undefined);
@@ -76,7 +80,11 @@ export function App({ repo }: { repo: Repository }) {
   }
   async function loadDetails(id = selectedId) {
     if (!id) { setDetails(null); return; }
-    try { setDetails(await repo.getTaskDetails(id)); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    const request = ++detailRequest.current;
+    try {
+      const next = await repo.getTaskDetails(id);
+      if (request === detailRequest.current && selection.current === id) setDetails(next);
+    } catch (e) { if (request === detailRequest.current && selection.current === id) setError(e instanceof Error ? e.message : String(e)); }
   }
   async function reloadAll() {
     const currentId = selectedId;
@@ -173,7 +181,7 @@ export function App({ repo }: { repo: Repository }) {
 
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand"><span className="brand-mark">D</span><div><strong>Deadline Dock</strong><small>締切から仕事を見る</small></div></div>
+      <div className="brand"><img className="brand-mark" src={brandIcon} alt="" /><div><strong>Deadline Dock</strong><small>締切から仕事を見る</small></div></div>
       <nav className="nav-tabs">
         <button className={view === 'ACTIVE' ? 'active' : ''} onClick={() => chooseView('ACTIVE')}>期限</button>
         <button className={view === 'SCHEDULE' ? 'active' : ''} onClick={() => chooseView('SCHEDULE')}>予定</button>

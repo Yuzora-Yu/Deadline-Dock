@@ -48,21 +48,21 @@ try {
     if (m.type() === "error") console.error("BROWSER", m.text());
   });
   await page.goto("http://127.0.0.1:1422/tools/deadline-dock/");
-  await page
-    .getByRole("textbox", { name: "タスクを追加", exact: true })
-    .fill("明日の準備をする");
-  await page.getByRole("button", { name: "タスクを登録", exact: true }).click();
-  await page
-    .getByRole("button", { name: "明日の準備をする 急ぎではない", exact: true })
-    .click();
-  await page
-    .getByRole("textbox", { name: "作業内容", exact: true })
-    .fill("必要な資料と持ち物を確認");
-  await page
-    .getByRole("textbox", { name: "チェック項目を追加", exact: true })
-    .fill("資料をそろえる");
-  await page.getByRole("button", { name: "追加", exact: true }).click();
-  await page.getByRole("button", { name: "保存", exact: true }).click();
+  // Creating a draft must not persist anything until registration succeeds.
+  await page.getByRole('button', {name:'＋ タスクを詳しく登録', exact:true}).click();
+  await page.getByRole('textbox', {name:'件名', exact:true}).fill('登録しない下書き');
+  await page.getByRole('button', {name:'閉じる', exact:true}).click();
+  await expect(page.getByText('入力した内容を破棄して閉じますか？')).toBeVisible();
+  await page.getByRole('button', {name:'破棄して閉じる', exact:true}).click();
+  await expect(page.locator('.tasks article')).toHaveCount(0);
+  await page.getByRole('button', {name:'＋ タスクを詳しく登録', exact:true}).click();
+  await page.getByRole('textbox', {name:'件名', exact:true}).fill('明日の準備をする');
+  await page.getByRole('textbox', {name:'作業内容', exact:true}).fill('必要な資料と持ち物を確認');
+  await page.getByRole('textbox', {name:'チェック項目を追加', exact:true}).fill('資料をそろえる');
+  // An item still in the add field is included, not silently discarded.
+  await fs.mkdir('windows-build', {recursive:true});
+  await page.screenshot({path:'windows-build/web-composer.png',fullPage:true});
+  await page.getByRole('button', {name:'登録する', exact:true}).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.reload();
   await expect(page.locator(".task-body")).toContainText(
@@ -72,6 +72,27 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload();
   await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+  const manifest = await page.evaluate(async () => (await fetch('./manifest.webmanifest')).json());
+  expect(manifest.display).toBe('standalone');
+  expect(manifest.id).toBe('/tools/deadline-dock/');
+  for (const size of [192,512]) {
+    expect(manifest.icons.some(i => i.sizes === `${size}x${size}` && i.type === 'image/png')).toBe(true);
+    const measured = await page.evaluate(async size => {const image=new Image(); image.src=`./icon-${size}.png`; await image.decode(); return [image.naturalWidth,image.naturalHeight];},size);
+    expect(measured).toEqual([size,size]);
+  }
+  // Prompt arrives before Settings opens: the handler must remain mounted.
+  await page.evaluate(() => {
+    const e = new Event('beforeinstallprompt', {cancelable:true});
+    e.prompt = async () => { window.__installPrompted = true; };
+    e.userChoice = Promise.resolve({outcome:'accepted'});
+    window.dispatchEvent(e);
+  });
+  await page.getByRole('button',{name:'⚙ 設定',exact:true}).click();
+  await page.getByRole('button',{name:'アプリをインストール',exact:true}).click();
+  expect(await page.evaluate(() => window.__installPrompted)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  await expect(page.getByRole('heading',{name:'アプリとして利用中'})).toBeVisible();
+  await page.getByRole('button',{name:'▤ タスク',exact:true}).click();
   await context.setOffline(true);
   await page.reload();
   await page
@@ -111,7 +132,7 @@ try {
   });
   expect(errors).toEqual([]);
   console.log(
-    "PASS: 390px mobile UI, edit/checklist, IndexedDB reload, offline reload/create, completion, deletion/undo, no horizontal overflow, no JS errors.",
+    "PASS: 390px mobile UI, first-registration details/checklist, unsaved draft protection, PWA icons/install event, IndexedDB reload, offline reload/create, completion, deletion/undo, no horizontal overflow, no JS errors.",
   );
 } catch (e) {
   if (page) {

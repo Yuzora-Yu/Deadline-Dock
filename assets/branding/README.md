@@ -4,6 +4,6 @@ Recreated 2026-09-15 with the built-in image generation tool, replacing the earl
 
 - `deadline-dock-logo.png`: original opaque artwork, 1254 × 1254.
 - `deadline-dock-oauth-120.png`: RGB 120 × 120 export; no alpha channel.
-- Portal: `logo-opaque.png` uses the same RGB export. The v0.1.11 executable icon is unchanged.
+- Portal: `logo-opaque.png` uses the same RGB export. v0.1.14 uses the same original for Windows ICO/PNG and PWA PNGs. Resize-only exports are generated with the Tauri CLI; no transparency removal is used.
 
 Prompt: Create a new square Deadline Dock logo. Entire canvas edge-to-edge is a solid forest green background, including all corners; fully opaque. Crisp geometric ivory uppercase D and sage checkmark, generous even margins, legible at small sizes. No transparency, cutouts, rounded outer tile, gradients, glow, shadows, texture, or extra text.
