@@ -33,3 +33,11 @@
 - Any `.ps1` containing non-ASCII text must be encoded as UTF-8 with BOM for Windows PowerShell 5.1 compatibility.
 - Packaging must validate both filename flags and PowerShell BOMs before distribution.
 - Update ZIPs should not add a duplicate top-level folder when the expected user flow is Windows `Extract All`; archive contents should begin at the update package root.
+
+## Windows branding
+
+- Keep `local.deadlinedock.app` stable: it identifies both local data and Windows shortcut grouping.
+- Reuse the opaque logo in `assets/branding/`; export native icon sizes with the Tauri CLI.
+- Set the native icon on every configured window, including initially hidden mini/composer windows.
+- The installer supplies `deadline-dock-brand.ico` and refreshes only shortcuts whose target is this installation. Preserve the AppUserModelID when recreating them.
+- Do not delete the global Windows icon cache or restart Explorer to repair this app's branding.

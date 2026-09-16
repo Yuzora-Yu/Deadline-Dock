@@ -156,6 +156,12 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             {
+                // Set both native window icons explicitly, including windows initially hidden.
+                // Windows uses these for the title bar, Alt+Tab and running taskbar buttons.
+                let brand_icon = tauri::include_image!("icons/128x128.png");
+                for window in app.webview_windows().values() {
+                    window.set_icon(brand_icon.clone())?;
+                }
                 app.handle()
                     .plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
 
@@ -183,9 +189,7 @@ pub fn run() {
                         "quit" => app.exit(0),
                         _ => {}
                     });
-                if let Some(icon) = app.default_window_icon() {
-                    tray_builder = tray_builder.icon(icon.clone());
-                }
+                tray_builder = tray_builder.icon(brand_icon);
                 tray_builder.build(app)?;
             }
             Ok(())

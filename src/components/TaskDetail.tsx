@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { Category, CheckItem, DeadlineInput, Resource, ResourceType, ScheduleEvent, TaskDetails, TaskStatus } from '../types';
 import type { Repository } from '../lib/repository';
-import { deadlineInputFromTask } from '../lib/deadline';
+import { deadlineInputFromTask, getUrgency } from '../lib/deadline';
 import { formatDate, fromLocalDateTimeInput, toLocalDateTimeInput } from '../lib/datetime';
 import { chooseLocalPath, openResource } from '../lib/platform';
 import { DeadlinePicker } from './DeadlinePicker';
@@ -111,6 +111,7 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
   const [saveError, setSaveError] = useState('');
   const previousTask = useRef(task);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const deadlineSection = useRef<HTMLElement>(null);
   const [eventTitle, setEventTitle] = useState('');
   const [eventStart, setEventStart] = useState('');
   const [eventEnd, setEventEnd] = useState('');
@@ -217,6 +218,9 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
   }
 
   const detailColor = categoryColor(task.category_color);
+  const urgency = task.status === 'COMPLETED' ? { tone: 'normal', label: task.deadline_label } : getUrgency(task);
+  const completedChecks = details.checkItems.filter(item => item.checked).length;
+  const deadlineChanged = JSON.stringify(deadline) !== JSON.stringify(deadlineInputFromTask(task));
   const detailStyle = task.category_name ? { '--category-tint': detailColor.tint, '--category-accent': detailColor.accent } as CSSProperties : undefined;
 
   return <div className={`detail-scroll ${task.category_name ? 'has-category-color' : ''}`} style={detailStyle}>
@@ -235,6 +239,10 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
 
     <section className="form-section">
       <label className="field"><span>件名</span><input className="detail-title-input" value={title} onChange={e => setTitle(e.target.value)} /></label>
+      <div className={`deadline-overview ${urgency.tone}`}>
+        <div><span className="overview-label">締切{deadlineChanged ? ' · 変更あり' : ''}</span><strong>{deadlineChanged ? deadline.label : urgency.label}</strong><small>{!deadlineChanged && task.deadline_label !== urgency.label ? task.deadline_label : (deadlineChanged ? '上部の「保存」で反映します' : (task.status === 'COMPLETED' ? '完了したタスク' : ''))}</small></div>
+        <button type="button" className="button secondary" onClick={() => { deadlineSection.current?.scrollIntoView({ block: 'start' }); deadlineSection.current?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true }); }}>締切を編集 ↓</button>
+      </div>
       <div className="form-grid two">
         <label className="field"><span>分類</span><select value={categoryId} onChange={e => setCategoryId(e.target.value)}><option value="">未分類</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <label className="field"><span>表示開始（任意）</span><input type="datetime-local" value={snooze} onChange={e => setSnooze(e.target.value)} /></label>
@@ -242,14 +250,15 @@ export function TaskDetail({ details, categories, repo, onChanged, onDeleted, on
       <label className="field"><span>作業内容</span><textarea rows={5} placeholder="補足、手順、確認事項など" value={description} onChange={e => setDescription(e.target.value)} onBlur={()=>void saveDescription()} /><small className="field-help">{description!==task.description ? '編集中 · 入力欄を離れると保存します' : '保存済み · Google連携中は自動同期します'}</small></label>
       {saveError && <p className="settings-message" role="alert">保存できませんでした：{saveError}</p>}
       <div className="task-checklist-block">
-        <div className="section-title compact"><div><span className="eyebrow">CHECKLIST</span><h3>チェック項目</h3></div><span className="count-badge">{details.checkItems.filter(item => item.checked).length}/{details.checkItems.length}</span></div>
+        <div className="section-title compact"><div><span className="eyebrow">CHECKLIST</span><h3>チェック項目</h3></div><span className="count-badge">{completedChecks}/{details.checkItems.length}</span></div>
+        {details.checkItems.length > 0 && <progress className="check-progress" value={completedChecks} max={details.checkItems.length} aria-label="チェック項目の完了数" />}
         <div className="task-check-list">{details.checkItems.map((item, index) => <CheckItemRow key={item.id} item={item} index={index} total={details.checkItems.length} repo={repo} onChanged={onChanged} />)}</div>
         {details.checkItems.length === 0 && <div className="check-empty">段階的な作業がある場合は、ここにチェック項目を追加できます。</div>}
         <div className="check-add-row detail-check-add"><input placeholder="チェック項目を追加" value={checkText} onChange={e => setCheckText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void addCheckItem(); } }} /><button type="button" className="button secondary" disabled={!checkText.trim()} onClick={() => void addCheckItem()}>＋追加</button></div>
       </div>
     </section>
 
-    <section className="form-section deadline-section">
+    <section className="form-section deadline-section" ref={deadlineSection}>
       <div className="section-title"><div><span className="eyebrow">DEADLINE</span><h3>締切</h3></div>{task.postponement_count > 0 && <span className="warning-badge">↪ 延期 {task.postponement_count}回</span>}</div>
       <DeadlinePicker value={deadline} onChange={setDeadline} />
     </section>

@@ -1,6 +1,6 @@
 [package]
 name = "deadline-dock"
-version = "0.1.14"
+version = "0.1.15"
 description = "Deadline-first local task ledger"
 authors = ["Deadline Dock"]
 edition = "2021"

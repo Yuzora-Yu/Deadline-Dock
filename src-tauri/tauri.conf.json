@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Deadline Dock",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "identifier": "local.deadlinedock.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -74,8 +74,12 @@
         "languages": [
           "Japanese"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "installer-hooks.nsh"
       }
+    },
+    "resources": {
+      "icons/icon.ico": "deadline-dock-brand.ico"
     }
   }
 }

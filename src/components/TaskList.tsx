@@ -47,7 +47,7 @@ export function TaskList({ tasks, selectedId, onSelect, emptyText = 'タスク�
       const archive = mode === 'ARCHIVE';
       const color = categoryColor(task.category_color);
       const categoryStyle = task.category_name ? { '--category-tint': color.tint, '--category-accent': color.accent } as CSSProperties : undefined;
-      return <button type="button" key={task.id} style={categoryStyle} className={`task-row ${selectedId === task.id ? 'selected' : ''} ${task.category_name ? 'has-category-color' : ''}`} onClick={() => onSelect(task)}>
+      return <button type="button" key={task.id} aria-current={selectedId === task.id ? 'true' : undefined} style={categoryStyle} className={`task-row ${selectedId === task.id ? 'selected' : ''} ${task.category_name ? 'has-category-color' : ''}`} onClick={() => onSelect(task)}>
         <span className={`urgency-dot ${archive ? 'muted' : urgency.tone}`} aria-hidden="true" />
         <span className="task-main">
           <span className="task-title">{task.title}</span>
@@ -59,6 +59,7 @@ export function TaskList({ tasks, selectedId, onSelect, emptyText = 'タスク�
             {!archive && task.status !== 'TODO' && <span>{statusLabel(task.status)}</span>}
             {task.postponement_count > 0 && <span className="postponed">↪ 延期{task.postponement_count}回</span>}
           </span>
+          {task.description.trim() && <span className="task-preview">{task.description}</span>}
           {!archive && task.next_event_at && <span className="next-event">📅 {formatShortDateTime(task.next_event_at)} {task.next_event_title}</span>}
         </span>
       </button>;
