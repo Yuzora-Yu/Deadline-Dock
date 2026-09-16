@@ -9,7 +9,7 @@ const files = ["index.html", "icon.svg", "icon-192.png", "icon-512.png", "apple-
 // Stable artifacts on Windows and Linux, before hashing/caching/exporting.
 for (const file of files.filter(file => !file.endsWith('.png'))) {
   const filename = path.join(root, file);
-  await fs.writeFile(filename, (await fs.readFile(filename, 'utf8')).replace(/\r\n/g, '\n'));
+  await fs.writeFile(filename, (await fs.readFile(filename, 'utf8')).replace(/\r/g, ''));
 }
 const version = createHash("sha256")
   .update(Buffer.concat(await Promise.all(files.map(f => fs.readFile(path.join(root, f))))))
